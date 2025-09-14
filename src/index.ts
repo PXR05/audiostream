@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { openapi } from "@elysiajs/openapi";
 import { bearer } from "@elysiajs/bearer";
 import { audioController } from "./modules/audio";
+import { MetadataCache } from "./utils/metadata";
 
 const VALID_TOKEN = process.env.TOKEN;
 
@@ -54,3 +55,15 @@ const app = new Elysia()
   .listen(3000);
 
 console.log(`Running at ${app.server?.hostname}:${app.server?.port}`);
+
+process.on("SIGINT", async () => {
+  console.log("Shutting down gracefully...");
+  await MetadataCache.flush();
+  process.exit(0);
+});
+
+process.on("SIGTERM", async () => {
+  console.log("Shutting down gracefully...");
+  await MetadataCache.flush();
+  process.exit(0);
+});

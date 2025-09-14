@@ -16,6 +16,26 @@ export namespace AudioModel {
   });
   export type audioParams = typeof audioParams.static;
 
+  export const paginationQuery = t.Object({
+    page: t.Optional(t.Number({ minimum: 1, default: 1 })),
+    limit: t.Optional(t.Number({ minimum: 1, maximum: 100, default: 20 })),
+    sortBy: t.Optional(
+      t.Union(
+        [
+          t.Literal("filename"),
+          t.Literal("size"),
+          t.Literal("uploadedAt"),
+          t.Literal("title"),
+        ],
+        { default: "uploadedAt" }
+      )
+    ),
+    sortOrder: t.Optional(
+      t.Union([t.Literal("asc"), t.Literal("desc")], { default: "desc" })
+    ),
+  });
+  export type paginationQuery = typeof paginationQuery.static;
+
   export const audioMetadata = t.Object({
     title: t.Optional(t.String()),
     artist: t.Optional(t.String()),
@@ -59,6 +79,11 @@ export namespace AudioModel {
   export const audioListResponse = t.Object({
     files: t.Array(audioFile),
     count: t.Number(),
+    page: t.Number(),
+    limit: t.Number(),
+    totalPages: t.Number(),
+    hasNext: t.Boolean(),
+    hasPrev: t.Boolean(),
   });
   export type audioListResponse = typeof audioListResponse.static;
 

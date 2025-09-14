@@ -7,15 +7,21 @@ export const audioController = new Elysia({ prefix: "/audio" })
     "audio.upload": AudioModel.uploadBody,
     "audio.youtube": AudioModel.youtubeBody,
     "audio.params": AudioModel.audioParams,
+    "audio.pagination": AudioModel.paginationQuery,
   })
 
   .get(
     "/",
-    async () => {
-      const files = await AudioService.getAudioFiles();
-      return { files, count: files.length };
+    async ({ query }) => {
+      return await AudioService.getAudioFiles({
+        page: query.page,
+        limit: query.limit,
+        sortBy: query.sortBy,
+        sortOrder: query.sortOrder,
+      });
     },
     {
+      query: "audio.pagination",
       response: {
         200: AudioModel.audioListResponse,
       },
