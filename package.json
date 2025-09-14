@@ -6,10 +6,14 @@
     "dev": "bun run --watch src/index.ts"
   },
   "dependencies": {
-    "elysia": "latest"
+    "@elysiajs/bearer": "^1.4.1",
+    "@elysiajs/openapi": "^1.4.2",
+    "elysia": "^1.4.4",
+    "music-metadata": "^11.8.3",
+    "youtubei.js": "^15.1.1"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "bun-types": "^1.2.22"
   },
   "module": "src/index.js"
 }
