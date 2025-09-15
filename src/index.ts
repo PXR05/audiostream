@@ -3,6 +3,7 @@ import { openapi } from "@elysiajs/openapi";
 import { bearer } from "@elysiajs/bearer";
 import { audioController } from "./modules/audio";
 import { MetadataCache } from "./utils/metadata";
+import { env } from "bun";
 
 const VALID_TOKEN = process.env.TOKEN;
 
@@ -28,7 +29,7 @@ const app = new Elysia()
   .get("/", () => ({ message: ":)" }))
   .guard(
     {
-      beforeHandle: authGuard,
+      beforeHandle: env.NODE_ENV === "production" ? authGuard : undefined,
     },
     (app) => app.use(audioController)
   )

@@ -2,7 +2,7 @@ import { t } from "elysia";
 
 export namespace AudioModel {
   export const uploadBody = t.Object({
-    file: t.File(),
+    files: t.Array(t.File()),
   });
   export type uploadBody = typeof uploadBody.static;
 
@@ -56,6 +56,7 @@ export namespace AudioModel {
     size: t.Number(),
     uploadedAt: t.Date(),
     metadata: t.Optional(audioMetadata),
+    imageFile: t.Optional(t.String()),
   });
   export type audioFile = typeof audioFile.static;
 
@@ -63,15 +64,36 @@ export namespace AudioModel {
     success: t.Boolean(),
     id: t.String(),
     filename: t.String(),
+    imageFile: t.Optional(t.String()),
     message: t.String(),
   });
   export type uploadResponse = typeof uploadResponse.static;
+
+  export const multiUploadResponse = t.Object({
+    success: t.Boolean(),
+    results: t.Array(
+      t.Union([
+        uploadResponse,
+        t.Object({
+          success: t.Literal(false),
+          filename: t.String(),
+          error: t.String(),
+        }),
+      ])
+    ),
+    totalFiles: t.Number(),
+    successfulUploads: t.Number(),
+    failedUploads: t.Number(),
+    message: t.String(),
+  });
+  export type multiUploadResponse = typeof multiUploadResponse.static;
 
   export const youtubeResponse = t.Object({
     success: t.Boolean(),
     id: t.String(),
     filename: t.String(),
     title: t.String(),
+    imageFile: t.Optional(t.String()),
     message: t.String(),
   });
   export type youtubeResponse = typeof youtubeResponse.static;

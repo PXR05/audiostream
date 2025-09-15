@@ -10,7 +10,9 @@ import {
   generateId,
   UPLOADS_DIR,
   ALLOWED_AUDIO_EXTENSIONS,
+  ALLOWED_IMAGE_EXTENSIONS,
   MAX_FILE_SIZE,
+  getImageFileName,
 } from "../../utils/helpers";
 
 await mkdir(UPLOADS_DIR, { recursive: true });
@@ -45,6 +47,65 @@ export abstract class AudioService {
     }
   }
 
+  static async extractAlbumArt(
+    filePath: string,
+    audioId: string
+  ): Promise<string | null> {
+    try {
+      const metadata = await mm.parseFile(filePath);
+      const picture = metadata.common.picture?.[0];
+
+      if (!picture) {
+        return null;
+      }
+
+      const extension =
+        picture.format === "image/jpeg"
+          ? ".jpg"
+          : picture.format === "image/png"
+            ? ".png"
+            : ".jpg";
+      const imageFileName = getImageFileName(audioId, extension);
+      const imagePath = join(UPLOADS_DIR, imageFileName);
+
+      await writeFile(imagePath, picture.data);
+      return imageFileName;
+    } catch (error) {
+      console.error("[ALBUM_ART]:", error);
+      return null;
+    }
+  }
+
+  static async downloadYoutubeThumbnail(
+    videoInfo: any,
+    audioId: string
+  ): Promise<string | null> {
+    try {
+      const thumbnails = videoInfo.basic_info?.thumbnail?.thumbnails;
+      if (!thumbnails || thumbnails.length === 0) {
+        return null;
+      }
+
+      const bestThumbnail = thumbnails[thumbnails.length - 1];
+      const thumbnailUrl = bestThumbnail.url;
+
+      const response = await fetch(thumbnailUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch thumbnail: ${response.statusText}`);
+      }
+
+      const imageBuffer = new Uint8Array(await response.arrayBuffer());
+      const imageFileName = getImageFileName(audioId, ".jpg");
+      const imagePath = join(UPLOADS_DIR, imageFileName);
+
+      await writeFile(imagePath, imageBuffer);
+      return imageFileName;
+    } catch (error) {
+      console.error("[YOUTUBE_THUMB]:", error);
+      return null;
+    }
+  }
+
   private static async loadAllFiles(): Promise<AudioModel.audioFile[]> {
     const now = Date.now();
 
@@ -67,13 +128,28 @@ export abstract class AudioService {
         const filePath = join(UPLOADS_DIR, filename);
         const stats = await stat(filePath);
         const metadata = MetadataCache.get(filename);
+        const audioId = filename.replace(/\.[^/.]+$/, "");
+
+        const imageFiles = ALLOWED_IMAGE_EXTENSIONS.map((ext) =>
+          getImageFileName(audioId, ext)
+        );
+
+        let imageFile: string | undefined;
+        for (const imgFile of imageFiles) {
+          const imgPath = join(UPLOADS_DIR, imgFile);
+          if (existsSync(imgPath)) {
+            imageFile = imgFile;
+            break;
+          }
+        }
 
         return {
-          id: filename.replace(/\.[^/.]+$/, ""),
+          id: audioId,
           filename,
           size: stats.size,
           uploadedAt: stats.mtime,
           metadata,
+          imageFile,
         };
       });
 
@@ -209,6 +285,8 @@ export abstract class AudioService {
 
     this.invalidateCache();
 
+    const extractedImage = await this.extractAlbumArt(filePath, id);
+
     setImmediate(async () => {
       try {
         const metadata = await this.extractMetadata(filePath);
@@ -224,7 +302,47 @@ export abstract class AudioService {
       success: true,
       id,
       filename,
+      imageFile: extractedImage || undefined,
       message: "File uploaded successfully",
+    };
+  }
+
+  static async uploadFiles(
+    files: File[]
+  ): Promise<AudioModel.multiUploadResponse> {
+    if (!files || files.length === 0) {
+      throw status(400, "No files provided");
+    }
+
+    const uploadPromises = files.map(async (file) => {
+      try {
+        const result = await this.uploadFile(file);
+        return result;
+      } catch (error: any) {
+        const errorMessage = error.message || "Unknown error occurred";
+        return {
+          success: false as const,
+          filename: file.name,
+          error: errorMessage,
+        };
+      }
+    });
+
+    const results = await Promise.all(uploadPromises);
+    const successfulUploads = results.filter((r) => r.success).length;
+    const failedUploads = results.filter((r) => !r.success).length;
+    const totalFiles = files.length;
+    const allSuccessful = failedUploads === 0;
+
+    return {
+      success: allSuccessful,
+      results,
+      totalFiles,
+      successfulUploads,
+      failedUploads,
+      message: allSuccessful
+        ? `Successfully uploaded ${successfulUploads} file${successfulUploads !== 1 ? "s" : ""}`
+        : `Uploaded ${successfulUploads} of ${totalFiles} files. ${failedUploads} failed.`,
     };
   }
 
@@ -281,11 +399,14 @@ export abstract class AudioService {
         })
         .catch((err) => console.error("[YOUTUBE]:", err));
 
+      const thumbnailFile = await this.downloadYoutubeThumbnail(info, id);
+
       return {
         success: true,
         id,
         filename,
         title: info.basic_info.title,
+        imageFile: thumbnailFile || undefined,
         message: "YouTube audio downloaded successfully",
       };
     } catch (error) {
@@ -315,6 +436,14 @@ export abstract class AudioService {
 
     try {
       unlinkSync(filePath);
+
+      if (file.imageFile) {
+        const imagePath = join(UPLOADS_DIR, file.imageFile);
+        if (existsSync(imagePath)) {
+          unlinkSync(imagePath);
+        }
+      }
+
       MetadataCache.delete(file.filename);
       this.invalidateCache();
       return { success: true, message: "File deleted successfully" };
@@ -334,5 +463,23 @@ export abstract class AudioService {
     }
 
     return { file, filePath };
+  }
+
+  static async getImageStream(
+    id: string
+  ): Promise<{ file: AudioModel.audioFile; imagePath: string }> {
+    const file = await this.getAudioById(id);
+
+    if (!file.imageFile) {
+      throw status(404, "No image file found for this audio");
+    }
+
+    const imagePath = join(UPLOADS_DIR, file.imageFile);
+
+    if (!existsSync(imagePath)) {
+      throw status(404, "Image file not found on disk");
+    }
+
+    return { file, imagePath };
   }
 }

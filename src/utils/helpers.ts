@@ -12,3 +12,17 @@ export const ALLOWED_AUDIO_EXTENSIONS = [
   ".aac",
   ".ogg",
 ];
+export const ALLOWED_IMAGE_EXTENSIONS = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".gif",
+];
+
+export function getImageFileName(
+  audioId: string,
+  extension: string = ".jpg"
+): string {
+  return `${audioId}_image${extension}`;
+}

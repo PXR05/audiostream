@@ -31,13 +31,14 @@ export const audioController = new Elysia({ prefix: "/audio" })
   .post(
     "/upload",
     async ({ body }) => {
-      return await AudioService.uploadFile(body.file);
+      return await AudioService.uploadFiles(body.files);
     },
     {
       body: "audio.upload",
       response: {
-        200: AudioModel.uploadResponse,
+        200: AudioModel.multiUploadResponse,
         400: AudioModel.errorResponse,
+        413: AudioModel.errorResponse,
       },
     }
   )
@@ -102,6 +103,34 @@ export const audioController = new Elysia({ prefix: "/audio" })
         `inline; filename="${file.filename}"`;
 
       return Bun.file(filePath);
+    },
+    {
+      response: {
+        404: AudioModel.errorResponse,
+      },
+    }
+  )
+
+  .get(
+    "/:id/image",
+    async ({ params: { id }, set }) => {
+      const { file, imagePath } = await AudioService.getImageStream(id);
+
+      const ext = imagePath.split(".").pop()?.toLowerCase();
+      const mimeType =
+        ext === "png"
+          ? "image/png"
+          : ext === "gif"
+            ? "image/gif"
+            : ext === "webp"
+              ? "image/webp"
+              : "image/jpeg";
+
+      set.headers["content-type"] = mimeType;
+      set.headers["content-disposition"] =
+        `inline; filename="${file.imageFile}"`;
+
+      return Bun.file(imagePath);
     },
     {
       response: {
