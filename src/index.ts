@@ -2,7 +2,7 @@ import { Elysia } from "elysia";
 import { openapi } from "@elysiajs/openapi";
 import { bearer } from "@elysiajs/bearer";
 import { audioController } from "./modules/audio";
-import { MetadataCache } from "./utils/metadata";
+import { db } from "./db";
 import { env } from "bun";
 
 const VALID_TOKEN = process.env.TOKEN;
@@ -27,6 +27,7 @@ const app = new Elysia()
   .use(openapi())
   .use(bearer())
   .get("/", () => ({ message: ":)" }))
+  .get("/favicon.ico", () => {})
   .guard(
     {
       beforeHandle: env.NODE_ENV === "production" ? authGuard : undefined,
@@ -56,15 +57,14 @@ const app = new Elysia()
   .listen(3000);
 
 console.log(`Running at ${app.server?.hostname}:${app.server?.port}`);
+console.log(`Database initialized at audiostream.db`);
 
 process.on("SIGINT", async () => {
   console.log("Shutting down gracefully...");
-  await MetadataCache.flush();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
   console.log("Shutting down gracefully...");
-  await MetadataCache.flush();
   process.exit(0);
 });
