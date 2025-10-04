@@ -2,26 +2,8 @@ import { Elysia } from "elysia";
 import { openapi } from "@elysiajs/openapi";
 import { bearer } from "@elysiajs/bearer";
 import { audioController } from "./modules/audio";
-import { db } from "./db";
+import { authGuard } from "./utils/auth";
 import { env } from "bun";
-
-const VALID_TOKEN = process.env.TOKEN;
-
-const authGuard = ({ bearer, set }: { bearer?: string; set: any }) => {
-  if (!bearer) {
-    set.status = 401;
-    set.headers["WWW-Authenticate"] =
-      'Bearer realm="api", error="invalid_request"';
-    return { error: "Authorization header required" };
-  }
-
-  if (bearer !== VALID_TOKEN) {
-    set.status = 401;
-    set.headers["WWW-Authenticate"] =
-      'Bearer realm="api", error="invalid_token"';
-    return { error: "Invalid token" };
-  }
-};
 
 const app = new Elysia()
   .use(openapi())

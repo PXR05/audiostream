@@ -1,4 +1,4 @@
-import { AudioRepository } from "./db/repository";
+import { AudioRepository } from "../db/repository";
 import { readdir, stat } from "fs/promises";
 import { join, extname } from "path";
 import { existsSync } from "fs";
@@ -8,8 +8,8 @@ import {
   ALLOWED_AUDIO_EXTENSIONS,
   ALLOWED_IMAGE_EXTENSIONS,
   getImageFileName,
-} from "./utils/helpers";
-import type { AudioModel } from "./modules/audio/model";
+} from "../utils/helpers";
+import type { AudioModel } from "../modules/audio/model";
 
 async function extractMetadata(
   filePath: string
@@ -34,7 +34,7 @@ async function extractMetadata(
   }
 }
 
-async function migrateExistingFiles() {
+async function main() {
   console.log("Starting migration of existing files...");
 
   try {
@@ -93,4 +93,4 @@ async function migrateExistingFiles() {
   }
 }
 
-migrateExistingFiles();
+main();

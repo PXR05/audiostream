@@ -36,6 +36,19 @@ export namespace AudioModel {
   });
   export type paginationQuery = typeof paginationQuery.static;
 
+  export const searchQuery = t.Object({
+    q: t.String({ minLength: 1 }),
+    page: t.Optional(t.Number({ minimum: 1, default: 1 })),
+    limit: t.Optional(t.Number({ minimum: 1, maximum: 100, default: 20 })),
+  });
+  export type searchQuery = typeof searchQuery.static;
+
+  export const searchSuggestionsQuery = t.Object({
+    q: t.String({ minLength: 1 }),
+    limit: t.Optional(t.Number({ minimum: 1, maximum: 20, default: 5 })),
+  });
+  export type searchSuggestionsQuery = typeof searchSuggestionsQuery.static;
+
   export const audioMetadata = t.Object({
     title: t.Optional(t.String()),
     artist: t.Optional(t.String()),
@@ -125,4 +138,21 @@ export namespace AudioModel {
     message: t.Optional(t.String()),
   });
   export type errorResponse = typeof errorResponse.static;
+
+  export const searchSuggestion = t.Object({
+    type: t.Union([
+      t.Literal("title"),
+      t.Literal("artist"),
+      t.Literal("album"),
+    ]),
+    value: t.String(),
+    score: t.Number(),
+  });
+  export type searchSuggestion = typeof searchSuggestion.static;
+
+  export const searchSuggestionsResponse = t.Object({
+    suggestions: t.Array(searchSuggestion),
+  });
+  export type searchSuggestionsResponse =
+    typeof searchSuggestionsResponse.static;
 }

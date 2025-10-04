@@ -1,6 +1,6 @@
 import { status } from "elysia";
 import { existsSync, unlinkSync } from "fs";
-import { writeFile, mkdir, readdir, stat } from "fs/promises";
+import { writeFile, mkdir, stat } from "fs/promises";
 import { join, extname } from "path";
 import * as mm from "music-metadata";
 import type { AudioModel } from "./model";
@@ -9,7 +9,6 @@ import {
   generateId,
   UPLOADS_DIR,
   ALLOWED_AUDIO_EXTENSIONS,
-  ALLOWED_IMAGE_EXTENSIONS,
   MAX_FILE_SIZE,
   getImageFileName,
 } from "../../utils/helpers";
@@ -35,7 +34,7 @@ export abstract class AudioService {
         format: metadata.format.container,
       };
     } catch (error) {
-      console.error("[META_EXTRACT]:", error);
+      console.error("Metadata extraction failed:", error);
       return null;
     }
   }
@@ -64,7 +63,7 @@ export abstract class AudioService {
       await writeFile(imagePath, picture.data);
       return imageFileName;
     } catch (error) {
-      console.error("[ALBUM_ART]:", error);
+      console.error("Album art extraction failed:", error);
       return null;
     }
   }
@@ -155,10 +154,8 @@ export abstract class AudioService {
 
     const extractedImage = await this.extractAlbumArt(filePath, id);
 
-    // Extract metadata asynchronously
     const extractedMetadata = await this.extractMetadata(filePath);
 
-    // Save to database
     await AudioRepository.create(
       AudioRepository.fromMetadata(
         id,
@@ -263,7 +260,6 @@ export abstract class AudioService {
       const extractedMetadata = await this.extractMetadata(filePath);
       const extractedImage = await this.extractAlbumArt(filePath, id);
 
-      // Save to database
       await AudioRepository.create(
         AudioRepository.fromMetadata(
           id,
@@ -307,7 +303,6 @@ export abstract class AudioService {
     const filePath = join(UPLOADS_DIR, file.filename);
 
     try {
-      // Delete from filesystem
       unlinkSync(filePath);
 
       if (file.imageFile) {
@@ -317,7 +312,6 @@ export abstract class AudioService {
         }
       }
 
-      // Delete from database
       await AudioRepository.delete(id);
 
       return { success: true, message: "File deleted successfully" };
@@ -355,5 +349,42 @@ export abstract class AudioService {
     }
 
     return { file, imagePath };
+  }
+
+  static async search(
+    query: string,
+    options?: {
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<AudioModel.audioListResponse> {
+    const { page = 1, limit = 20 } = options || {};
+
+    const { files: dbFiles, total } = await AudioRepository.search(query, {
+      page,
+      limit,
+    });
+
+    const files = dbFiles.map((dbFile) => AudioRepository.toAudioModel(dbFile));
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      files,
+      count: total,
+      page,
+      limit,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    };
+  }
+
+  static async searchSuggestions(
+    query: string,
+    limit: number = 5
+  ): Promise<AudioModel.searchSuggestionsResponse> {
+    const suggestions = await AudioRepository.searchSuggestions(query, limit);
+    return { suggestions };
   }
 }

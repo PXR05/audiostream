@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { AudioService } from "./service";
 import { AudioModel } from "./model";
+import { adminAuthGuard } from "../../utils/auth";
 
 export const audioController = new Elysia({ prefix: "/audio" })
   .model({
@@ -8,6 +9,8 @@ export const audioController = new Elysia({ prefix: "/audio" })
     "audio.youtube": AudioModel.youtubeBody,
     "audio.params": AudioModel.audioParams,
     "audio.pagination": AudioModel.paginationQuery,
+    "audio.search": AudioModel.searchQuery,
+    "audio.searchSuggestions": AudioModel.searchSuggestionsQuery,
   })
 
   .get(
@@ -28,6 +31,35 @@ export const audioController = new Elysia({ prefix: "/audio" })
     }
   )
 
+  .get(
+    "/search",
+    async ({ query }) => {
+      return await AudioService.search(query.q, {
+        page: query.page,
+        limit: query.limit,
+      });
+    },
+    {
+      query: "audio.search",
+      response: {
+        200: AudioModel.audioListResponse,
+      },
+    }
+  )
+
+  .get(
+    "/search/suggestions",
+    async ({ query }) => {
+      return await AudioService.searchSuggestions(query.q, query.limit);
+    },
+    {
+      query: "audio.searchSuggestions",
+      response: {
+        200: AudioModel.searchSuggestionsResponse,
+      },
+    }
+  )
+
   .post(
     "/upload",
     async ({ body }) => {
@@ -35,6 +67,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
     },
     {
       body: "audio.upload",
+      beforeHandle: adminAuthGuard,
       response: {
         200: AudioModel.multiUploadResponse,
         400: AudioModel.errorResponse,
@@ -50,6 +83,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
     },
     {
       body: "audio.youtube",
+      beforeHandle: adminAuthGuard,
       response: {
         200: AudioModel.youtubeResponse,
         400: AudioModel.errorResponse,
@@ -82,8 +116,10 @@ export const audioController = new Elysia({ prefix: "/audio" })
       return await AudioService.deleteAudio(id);
     },
     {
+      beforeHandle: adminAuthGuard,
       response: {
         200: AudioModel.deleteResponse,
+        403: AudioModel.errorResponse,
         404: AudioModel.errorResponse,
         500: AudioModel.errorResponse,
       },
