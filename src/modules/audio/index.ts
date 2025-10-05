@@ -1,7 +1,7 @@
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
 import { AudioService } from "./service";
 import { AudioModel } from "./model";
-import { adminAuthGuard } from "../../utils/auth";
+import { authGuard } from "../../utils/auth";
 
 export const audioController = new Elysia({ prefix: "/audio" })
   .model({
@@ -63,13 +63,29 @@ export const audioController = new Elysia({ prefix: "/audio" })
   .post(
     "/upload",
     async ({ body }) => {
-      return await AudioService.uploadFiles(body.files);
+      if (body.file) {
+        return await AudioService.uploadFile(body.file);
+      } else if (body.files) {
+        if (Array.isArray(body.files)) {
+          if (body.files.length === 0) {
+            throw new Error("No files provided");
+          }
+          return await AudioService.uploadFiles(body.files);
+        } else {
+          return await AudioService.uploadFile(body.files as File);
+        }
+      } else {
+        throw new Error("No file or files provided");
+      }
     },
     {
       body: "audio.upload",
-      beforeHandle: adminAuthGuard,
+      beforeHandle: authGuard(true),
       response: {
-        200: AudioModel.multiUploadResponse,
+        200: t.Union([
+          AudioModel.uploadResponse,
+          AudioModel.multiUploadResponse,
+        ]),
         400: AudioModel.errorResponse,
         413: AudioModel.errorResponse,
       },
@@ -83,7 +99,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
     },
     {
       body: "audio.youtube",
-      beforeHandle: adminAuthGuard,
+      beforeHandle: authGuard(true),
       response: {
         200: AudioModel.youtubeResponse,
         400: AudioModel.errorResponse,
@@ -116,7 +132,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
       return await AudioService.deleteAudio(id);
     },
     {
-      beforeHandle: adminAuthGuard,
+      beforeHandle: authGuard(true),
       response: {
         200: AudioModel.deleteResponse,
         403: AudioModel.errorResponse,

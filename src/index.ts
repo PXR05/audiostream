@@ -3,7 +3,6 @@ import { openapi } from "@elysiajs/openapi";
 import { bearer } from "@elysiajs/bearer";
 import { audioController } from "./modules/audio";
 import { authGuard } from "./utils/auth";
-import { env } from "bun";
 
 const app = new Elysia()
   .use(openapi())
@@ -12,7 +11,7 @@ const app = new Elysia()
   .get("/favicon.ico", () => {})
   .guard(
     {
-      beforeHandle: env.NODE_ENV === "production" ? authGuard : undefined,
+      beforeHandle: authGuard(),
     },
     (app) => app.use(audioController)
   )

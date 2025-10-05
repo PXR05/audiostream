@@ -2,7 +2,8 @@ import { t } from "elysia";
 
 export namespace AudioModel {
   export const uploadBody = t.Object({
-    files: t.Array(t.File()),
+    file: t.Optional(t.File()),
+    files: t.Optional(t.Union([t.File(), t.Array(t.File())])),
   });
   export type uploadBody = typeof uploadBody.static;
 
