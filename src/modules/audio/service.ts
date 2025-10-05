@@ -128,30 +128,12 @@ export abstract class AudioService {
     const filename = `${id}${ext}`;
     const filePath = join(UPLOADS_DIR, filename);
 
-    const stream = file.stream();
-    const reader = stream.getReader();
-    const chunks: Uint8Array[] = [];
-
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-      }
-    } finally {
-      reader.releaseLock();
+      await Bun.write(filePath, file);
+    } catch (error) {
+      logger.error("Failed to write file to disk", error, { context: "AUDIO" });
+      throw status(500, "Failed to save file");
     }
-
-    const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-    const fileBuffer = new Uint8Array(totalLength);
-    let offset = 0;
-
-    for (const chunk of chunks) {
-      fileBuffer.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    await writeFile(filePath, fileBuffer);
 
     const extractedImage = await this.extractAlbumArt(filePath, id);
 
@@ -219,6 +201,22 @@ export abstract class AudioService {
     url: string
   ): Promise<AudioModel.youtubeResponse> {
     try {
+      const checkProc = Bun.spawn(["yt-dlp", "--version"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const checkExit = await checkProc.exited;
+      if (checkExit !== 0) {
+        throw new Error("yt-dlp is not installed or not accessible");
+      }
+    } catch (error) {
+      throw status(
+        500,
+        "yt-dlp is not installed. Please install it from https://github.com/yt-dlp/yt-dlp"
+      );
+    }
+
+    try {
       const id = generateId();
       const filename = `${id}.mp3`;
       const filePath = join(UPLOADS_DIR, filename);
@@ -240,6 +238,8 @@ export abstract class AudioService {
         url,
       ];
 
+      logger.info(`Downloading YouTube audio: ${url}`, { context: "YOUTUBE" });
+
       const proc = Bun.spawn(["yt-dlp", ...ytDlpArgs], {
         stdout: "pipe",
         stderr: "pipe",
@@ -249,7 +249,25 @@ export abstract class AudioService {
 
       if (exitCode !== 0) {
         const stderr = await new Response(proc.stderr).text();
-        throw new Error(`yt-dlp failed: ${stderr}`);
+        logger.error("yt-dlp failed", new Error(stderr), {
+          context: "YOUTUBE",
+        });
+
+        if (existsSync(filePath)) {
+          unlinkSync(filePath);
+        }
+
+        if (stderr.includes("Private video")) {
+          throw new Error("Video is private or unavailable");
+        } else if (stderr.includes("not available")) {
+          throw new Error("Video not available in your region or was deleted");
+        } else if (stderr.includes("Sign in")) {
+          throw new Error(
+            "Video requires authentication. Add cookies.txt to project root."
+          );
+        } else {
+          throw new Error(`Download failed: ${stderr.substring(0, 200)}`);
+        }
       }
 
       if (!existsSync(filePath)) {
@@ -271,6 +289,8 @@ export abstract class AudioService {
         )
       );
 
+      logger.info(`YouTube download completed: ${id}`, { context: "YOUTUBE" });
+
       return {
         success: true,
         id,
@@ -280,13 +300,10 @@ export abstract class AudioService {
         message: "YouTube audio downloaded successfully",
       };
     } catch (error) {
-      throw status(500, `Failed to download YouTube audio: ${error}`);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      throw status(500, `Failed to download YouTube audio: ${errorMessage}`);
     }
-  }
-
-  static async getAllAudioFiles(): Promise<AudioModel.audioFile[]> {
-    const { files: dbFiles } = await AudioRepository.findAll({ limit: 1000 });
-    return dbFiles.map((dbFile) => AudioRepository.toAudioModel(dbFile));
   }
 
   static async getAudioById(id: string): Promise<AudioModel.audioFile> {

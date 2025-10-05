@@ -4,9 +4,22 @@ services:
     ports:
       - "3000:3000"
     environment:
+      PORT: ${PORT:-3000}
       TOKEN: ${TOKEN}
       ADMIN_TOKEN: ${ADMIN_TOKEN}
     volumes:
       - ./uploads:/usr/src/app/uploads:rw
       - ./audiostream.db:/usr/src/app/audiostream.db:rw
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M

@@ -144,17 +144,41 @@ export const audioController = new Elysia({ prefix: "/audio" })
 
   .get(
     "/:id/stream",
-    async ({ params: { id }, set }) => {
+    async ({ params: { id }, set, request }) => {
       const { file, filePath } = await AudioService.getAudioStream(id);
+
+      const bunFile = Bun.file(filePath);
+      const fileSize = bunFile.size;
 
       const mimeType =
         file.metadata?.format === "mp3" ? "audio/mpeg" : "audio/*";
+
+      const range = request.headers.get("range");
+
+      if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const chunkSize = end - start + 1;
+
+        set.status = 206;
+        set.headers["content-range"] = `bytes ${start}-${end}/${fileSize}`;
+        set.headers["content-length"] = chunkSize.toString();
+        set.headers["content-type"] = mimeType;
+        set.headers["accept-ranges"] = "bytes";
+        set.headers["content-disposition"] =
+          `inline; filename="${file.filename}"`;
+
+        return bunFile.slice(start, end + 1);
+      }
+
       set.headers["content-type"] = mimeType;
+      set.headers["content-length"] = fileSize.toString();
       set.headers["accept-ranges"] = "bytes";
       set.headers["content-disposition"] =
         `inline; filename="${file.filename}"`;
 
-      return Bun.file(filePath);
+      return bunFile;
     },
     {
       response: {

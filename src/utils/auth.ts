@@ -28,23 +28,27 @@ export const authGuard =
       return { error: "Authorization header required" };
     }
 
-    if (ADMIN_TOKEN) {
-      const isAdmin = await verifyToken(bearer, ADMIN_TOKEN);
-      if (isAdmin) {
-        return;
-      }
-    }
-
     if (requireAdmin) {
       if (!ADMIN_TOKEN) {
         set.status = 500;
         return { error: "Server admin authentication not configured" };
       }
 
-      set.status = 403;
-      set.headers["WWW-Authenticate"] =
-        'Bearer realm="api", error="insufficient_scope"';
-      return { error: "Admin token required for this operation" };
+      const isAdmin = await verifyToken(bearer,ADMIN_TOKEN);
+      if (!isAdmin) {
+        set.status = 403;
+        set.headers["WWW-Authenticate"] =
+          'Bearer realm="api", error="insufficient_scope"';
+        return { error: "Admin token required for this operation" };
+      }
+      return;
+    }
+
+    if (ADMIN_TOKEN) {
+      const isAdmin = await verifyToken(bearer,ADMIN_TOKEN);
+      if (isAdmin) {
+        return;
+      }
     }
 
     if (!VALID_TOKEN) {

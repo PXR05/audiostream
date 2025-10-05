@@ -4,8 +4,31 @@ import { audioController } from "./modules/audio";
 import { authGuard } from "./utils/auth";
 import { logger } from "./utils/logger";
 import migrate from "./scripts/migrate";
+import { mkdir } from "fs/promises";
+import { UPLOADS_DIR } from "./utils/helpers";
 
-await migrate();
+try {
+  await mkdir(UPLOADS_DIR, { recursive: true });
+  logger.info(`Uploads directory ready: ${UPLOADS_DIR}`, {
+    context: "STARTUP",
+  });
+} catch (error) {
+  logger.error("Failed to create uploads directory", error, {
+    context: "STARTUP",
+  });
+  process.exit(1);
+}
+
+try {
+  await migrate();
+  logger.info("Database migrations completed", { context: "STARTUP" });
+} catch (error) {
+  logger.error("Database migration failed", error, { context: "STARTUP" });
+  process.exit(1);
+}
+
+const PORT = parseInt(process.env.PORT || "3000", 10);
+const HOST = process.env.HOST || "0.0.0.0";
 
 const app = new Elysia()
   .use(bearer())
@@ -37,18 +60,27 @@ const app = new Elysia()
     set.status = 500;
     return { error: "Internal server error", message: errorMessage };
   })
-  .listen(3000);
+  .listen({
+    port: PORT,
+    hostname: HOST,
+  });
 
-logger.info(`Server running at ${app.server?.hostname}:${app.server?.port}`, {
+logger.info(
+  `Server running at http://${app.server?.hostname}:${app.server?.port}`,
+  {
+    context: "SERVER",
+  }
+);
+logger.info(`Environment: ${process.env.NODE_ENV || "development"}`, {
   context: "SERVER",
 });
 
 process.on("SIGINT", async () => {
-  logger.info("Shutting down gracefully...", { context: "SERVER" });
+  logger.info("Shutting down...", { context: "SERVER" });
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
-  logger.info("Shutting down gracefully...", { context: "SERVER" });
+  logger.info("Shutting down...", { context: "SERVER" });
   process.exit(0);
 });
