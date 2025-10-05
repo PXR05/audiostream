@@ -1,11 +1,9 @@
-import { drizzle } from "drizzle-orm/libsql";
-import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { Database } from "bun:sqlite";
 import * as schema from "./schema";
 
-const client = createClient({
-  url: "file:./audiostream.db",
-});
+const client = new Database("audiostream.db");
 
-export const db = drizzle(client, { schema });
+export const db = drizzle({ client, schema });
 
 export type DB = typeof db;

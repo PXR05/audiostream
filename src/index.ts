@@ -1,18 +1,13 @@
 import { Elysia } from "elysia";
-import { openapi } from "@elysiajs/openapi";
 import { bearer } from "@elysiajs/bearer";
 import { audioController } from "./modules/audio";
 import { authGuard } from "./utils/auth";
-import { migrate } from "drizzle-orm/libsql/migrator";
-import { db } from "./db";
 import { logger } from "./utils/logger";
+import migrate from "./scripts/migrate";
 
-logger.info("Running database migrations...", { context: "DB" });
-await migrate(db, { migrationsFolder: "./src/db/migrations" });
-logger.info("Migrations completed successfully!", { context: "DB" });
+await migrate();
 
 const app = new Elysia()
-  .use(openapi())
   .use(bearer())
   .get("/", () => ({ message: ":)" }))
   .get("/favicon.ico", () => {})

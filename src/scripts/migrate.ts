@@ -11,6 +11,8 @@ import {
 } from "../utils/helpers";
 import type { AudioModel } from "../modules/audio/model";
 import { logger } from "../utils/logger";
+import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { db } from "../db";
 
 async function extractMetadata(
   filePath: string
@@ -36,6 +38,10 @@ async function extractMetadata(
 }
 
 async function main() {
+  logger.info("Running database migrations...", { context: "DB" });
+  migrate(db, { migrationsFolder: "./src/db/migrations" });
+  logger.info("Migrations completed successfully!", { context: "DB" });
+
   logger.info("Starting migration of existing files...", {
     context: "MIGRATE",
   });
@@ -94,11 +100,9 @@ async function main() {
     }
 
     logger.info("Migration completed successfully!", { context: "MIGRATE" });
-    process.exit(0);
   } catch (error) {
     logger.error("Migration failed", error, { context: "MIGRATE" });
-    process.exit(1);
   }
 }
 
-main();
+export default main;
