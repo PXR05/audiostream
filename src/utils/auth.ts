@@ -1,5 +1,6 @@
 import { verify } from "@node-rs/argon2";
 import { env } from "bun";
+import { logger } from "./logger";
 
 const VALID_TOKEN = process.env.TOKEN;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
@@ -8,7 +9,7 @@ async function verifyToken(hash: string, plainToken: string): Promise<boolean> {
   try {
     return await verify(hash, plainToken);
   } catch (error) {
-    console.error("Token verification error:", error);
+    logger.error("Token verification failed", error, { context: "AUTH" });
     return false;
   }
 }

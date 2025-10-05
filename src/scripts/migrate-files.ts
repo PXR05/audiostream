@@ -10,6 +10,7 @@ import {
   getImageFileName,
 } from "../utils/helpers";
 import type { AudioModel } from "../modules/audio/model";
+import { logger } from "../utils/logger";
 
 async function extractMetadata(
   filePath: string
@@ -29,13 +30,15 @@ async function extractMetadata(
       format: metadata.format.container,
     };
   } catch (error) {
-    console.error("[META_EXTRACT]:", error);
+    logger.error("Metadata extraction failed", error, { context: "MIGRATE" });
     return null;
   }
 }
 
 async function main() {
-  console.log("Starting migration of existing files...");
+  logger.info("Starting migration of existing files...", {
+    context: "MIGRATE",
+  });
 
   try {
     const files = await readdir(UPLOADS_DIR);
@@ -43,7 +46,9 @@ async function main() {
       ALLOWED_AUDIO_EXTENSIONS.includes(extname(file).toLowerCase())
     );
 
-    console.log(`Found ${audioFiles.length} audio files to migrate`);
+    logger.info(`Found ${audioFiles.length} audio files to migrate`, {
+      context: "MIGRATE",
+    });
 
     for (const filename of audioFiles) {
       const filePath = join(UPLOADS_DIR, filename);
@@ -52,11 +57,13 @@ async function main() {
 
       const existing = await AudioRepository.findById(audioId);
       if (existing) {
-        console.log(`Skipping ${filename} - already in database`);
+        logger.debug(`Skipping ${filename} - already in database`, undefined, {
+          context: "MIGRATE",
+        });
         continue;
       }
 
-      console.log(`Migrating ${filename}...`);
+      logger.info(`Migrating ${filename}...`, { context: "MIGRATE" });
 
       const metadata = await extractMetadata(filePath);
 
@@ -83,12 +90,13 @@ async function main() {
         )
       );
 
-      console.log(`✓ Migrated ${filename}`);
+      logger.info(`✓ Migrated ${filename}`, { context: "MIGRATE" });
     }
 
-    console.log("Migration completed successfully!");
+    logger.info("Migration completed successfully!", { context: "MIGRATE" });
+    process.exit(0);
   } catch (error) {
-    console.error("Migration failed:", error);
+    logger.error("Migration failed", error, { context: "MIGRATE" });
     process.exit(1);
   }
 }

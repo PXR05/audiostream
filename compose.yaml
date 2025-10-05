@@ -1,0 +1,12 @@
+services:
+  server:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      TOKEN: ${TOKEN}
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+    volumes:
+      - ./uploads:/usr/src/app/uploads:rw
+      - ./audiostream.db:/usr/src/app/audiostream.db:rw
+    restart: unless-stopped

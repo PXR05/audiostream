@@ -15,7 +15,7 @@ export const audioFiles = sqliteTable("audio_files", {
   year: integer("year"),
   genre: text("genre"),
   duration: real("duration"),
-  bitrate: integer("bitrate"),
+  bitrate: real("bitrate"),
   sampleRate: integer("sample_rate"),
   channels: integer("channels"),
   format: text("format"),

@@ -1,6 +1,6 @@
 import { db } from "./index";
 import { audioFiles, type NewAudioFile, type AudioFile } from "./schema";
-import { eq, asc, desc, sql, or, like } from "drizzle-orm";
+import { eq, asc, desc, sql, or, like, count } from "drizzle-orm";
 import type { AudioModel } from "../modules/audio/model";
 
 export abstract class AudioRepository {
@@ -48,9 +48,7 @@ export abstract class AudioRepository {
       .limit(limit)
       .offset(offset);
 
-    const countResult = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(audioFiles);
+    const countResult = await db.select({ count: count() }).from(audioFiles);
     const total = countResult[0]?.count ?? 0;
 
     return { files, total };
@@ -140,7 +138,7 @@ export abstract class AudioRepository {
       .offset(offset);
 
     const countResult = await db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: count() })
       .from(audioFiles)
       .where(
         or(
@@ -162,7 +160,7 @@ export abstract class AudioRepository {
     const searchPattern = `%${query}%`;
     const startsWithPattern = `${query}%`;
     const lowerQuery = query.toLowerCase();
-    
+
     const titleQuery = db
       .selectDistinct({
         type: sql<string>`'title'`,

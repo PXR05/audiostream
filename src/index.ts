@@ -3,6 +3,13 @@ import { openapi } from "@elysiajs/openapi";
 import { bearer } from "@elysiajs/bearer";
 import { audioController } from "./modules/audio";
 import { authGuard } from "./utils/auth";
+import { migrate } from "drizzle-orm/libsql/migrator";
+import { db } from "./db";
+import { logger } from "./utils/logger";
+
+logger.info("Running database migrations...", { context: "DB" });
+await migrate(db, { migrationsFolder: "./src/db/migrations" });
+logger.info("Migrations completed successfully!", { context: "DB" });
 
 const app = new Elysia()
   .use(openapi())
@@ -19,8 +26,8 @@ const app = new Elysia()
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
 
-    console.error("[ERROR]:", errorMessage);
-    console.error("[REQUEST]:", request.url);
+    logger.error(errorMessage, error, { context: "HTTP" });
+    logger.debug(`Request URL: ${request.url}`, undefined, { context: "HTTP" });
 
     if (code === "VALIDATION") {
       set.status = 400;
@@ -37,15 +44,16 @@ const app = new Elysia()
   })
   .listen(3000);
 
-console.log(`Running at ${app.server?.hostname}:${app.server?.port}`);
-console.log(`Database initialized at audiostream.db`);
+logger.info(`Server running at ${app.server?.hostname}:${app.server?.port}`, {
+  context: "SERVER",
+});
 
 process.on("SIGINT", async () => {
-  console.log("Shutting down gracefully...");
+  logger.info("Shutting down gracefully...", { context: "SERVER" });
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
-  console.log("Shutting down gracefully...");
+  logger.info("Shutting down gracefully...", { context: "SERVER" });
   process.exit(0);
 });

@@ -1,4 +1,5 @@
 import { hash } from "@node-rs/argon2";
+import { logger } from "../utils/logger";
 
 async function encryptText(text: string): Promise<string> {
   try {
@@ -10,7 +11,7 @@ async function encryptText(text: string): Promise<string> {
     });
     return hashedText;
   } catch (error) {
-    console.error("Error encrypting text:", error);
+    logger.error("Text encryption failed", error, { context: "ENCRYPT" });
     throw error;
   }
 }
@@ -19,17 +20,29 @@ async function main() {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
-    console.log("Usage: bun run encrypt <text-to-encrypt>");
-    console.log("\nExample:");
-    console.log('  bun run encrypt "my secret password"');
+    logger.info("Usage: bun run encrypt <text-to-encrypt>", {
+      context: "ENCRYPT",
+      timestamp: false,
+    });
+    logger.info("\nExample:", { context: "ENCRYPT", timestamp: false });
+    logger.info('  bun run encrypt "my secret password"', {
+      context: "ENCRYPT",
+      timestamp: false,
+    });
     process.exit(1);
   }
 
   const textToEncrypt = args.join(" ");
   const encrypted = await encryptText(textToEncrypt);
 
-  console.log("Original  :", textToEncrypt);
-  console.log("Encrypted :", encrypted);
+  logger.info("Original  : " + textToEncrypt, {
+    context: "ENCRYPT",
+    timestamp: false,
+  });
+  logger.info("Encrypted : " + encrypted, {
+    context: "ENCRYPT",
+    timestamp: false,
+  });
 }
 
 main();

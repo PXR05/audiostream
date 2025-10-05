@@ -12,6 +12,7 @@ import {
   MAX_FILE_SIZE,
   getImageFileName,
 } from "../../utils/helpers";
+import { logger } from "../../utils/logger";
 
 await mkdir(UPLOADS_DIR, { recursive: true });
 
@@ -34,7 +35,7 @@ export abstract class AudioService {
         format: metadata.format.container,
       };
     } catch (error) {
-      console.error("Metadata extraction failed:", error);
+      logger.error("Metadata extraction failed", error, { context: "AUDIO" });
       return null;
     }
   }
@@ -63,7 +64,7 @@ export abstract class AudioService {
       await writeFile(imagePath, picture.data);
       return imageFileName;
     } catch (error) {
-      console.error("Album art extraction failed:", error);
+      logger.error("Album art extraction failed", error, { context: "AUDIO" });
       return null;
     }
   }
