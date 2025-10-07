@@ -12,7 +12,7 @@ export abstract class AudioRepository {
   static async findAll(options?: {
     page?: number;
     limit?: number;
-    sortBy?: "filename" | "size" | "uploadedAt" | "title";
+    sortBy?: "id" | "filename" | "size" | "uploadedAt" | "title";
     sortOrder?: "asc" | "desc";
   }): Promise<{ files: AudioFile[]; total: number }> {
     const page = options?.page ?? 1;
@@ -23,6 +23,9 @@ export abstract class AudioRepository {
 
     let orderByColumn;
     switch (sortBy) {
+      case "id":
+        orderByColumn = audioFiles.id;
+        break;
       case "filename":
         orderByColumn = audioFiles.filename;
         break;
@@ -72,7 +75,7 @@ export abstract class AudioRepository {
 
   static async update(
     id: string,
-    data: Partial<NewAudioFile>
+    data: Partial<NewAudioFile>,
   ): Promise<AudioFile | null> {
     const result = await db
       .update(audioFiles)
@@ -95,7 +98,7 @@ export abstract class AudioRepository {
     options?: {
       page?: number;
       limit?: number;
-    }
+    },
   ): Promise<{ files: AudioFile[]; total: number }> {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 20;
@@ -130,8 +133,8 @@ export abstract class AudioRepository {
           like(audioFiles.title, searchPattern),
           like(audioFiles.artist, searchPattern),
           like(audioFiles.album, searchPattern),
-          like(audioFiles.filename, searchPattern)
-        )
+          like(audioFiles.filename, searchPattern),
+        ),
       )
       .orderBy(desc(relevanceScore))
       .limit(limit)
@@ -145,8 +148,8 @@ export abstract class AudioRepository {
           like(audioFiles.title, searchPattern),
           like(audioFiles.artist, searchPattern),
           like(audioFiles.album, searchPattern),
-          like(audioFiles.filename, searchPattern)
-        )
+          like(audioFiles.filename, searchPattern),
+        ),
       );
     const total = countResult[0]?.count ?? 0;
 
@@ -155,7 +158,7 @@ export abstract class AudioRepository {
 
   static async searchSuggestions(
     query: string,
-    limit: number = 5
+    limit: number = 5,
   ): Promise<AudioModel.searchSuggestion[]> {
     const searchPattern = `%${query}%`;
     const startsWithPattern = `${query}%`;
@@ -163,7 +166,7 @@ export abstract class AudioRepository {
 
     const titleQuery = db
       .selectDistinct({
-        type: sql<string>`'title'`,
+        type: sql<string>`'title'`.as("type"),
         value: audioFiles.title,
         score: sql<number>`
           CASE
@@ -171,14 +174,14 @@ export abstract class AudioRepository {
             WHEN LOWER(${audioFiles.title}) LIKE ${startsWithPattern} THEN 400
             ELSE 40
           END
-        `,
+        `.as("score"),
       })
       .from(audioFiles)
       .where(like(audioFiles.title, searchPattern));
 
     const artistQuery = db
       .selectDistinct({
-        type: sql<string>`'artist'`,
+        type: sql<string>`'artist'`.as("type"),
         value: audioFiles.artist,
         score: sql<number>`
           CASE
@@ -186,14 +189,14 @@ export abstract class AudioRepository {
             WHEN LOWER(${audioFiles.artist}) LIKE ${startsWithPattern} THEN 300
             ELSE 30
           END
-        `,
+        `.as("score"),
       })
       .from(audioFiles)
       .where(like(audioFiles.artist, searchPattern));
 
     const albumQuery = db
       .selectDistinct({
-        type: sql<string>`'album'`,
+        type: sql<string>`'album'`.as("type"),
         value: audioFiles.album,
         score: sql<number>`
           CASE
@@ -201,7 +204,7 @@ export abstract class AudioRepository {
             WHEN LOWER(${audioFiles.album}) LIKE ${startsWithPattern} THEN 200
             ELSE 20
           END
-        `,
+        `.as("score"),
       })
       .from(audioFiles)
       .where(like(audioFiles.album, searchPattern));
@@ -209,7 +212,7 @@ export abstract class AudioRepository {
     const results = await titleQuery
       .unionAll(artistQuery)
       .unionAll(albumQuery)
-      .orderBy(desc(sql`score`));
+      .orderBy(desc(sql.raw("score")));
 
     const seen = new Set<string>();
     const suggestions: AudioModel.searchSuggestion[] = [];
@@ -257,7 +260,7 @@ export abstract class AudioRepository {
     filename: string,
     size: number,
     metadata?: AudioModel.audioMetadata,
-    imageFile?: string
+    imageFile?: string,
   ): NewAudioFile {
     return {
       id,

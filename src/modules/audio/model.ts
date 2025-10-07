@@ -28,11 +28,11 @@ export namespace AudioModel {
           t.Literal("uploadedAt"),
           t.Literal("title"),
         ],
-        { default: "uploadedAt" }
-      )
+        { default: "uploadedAt" },
+      ),
     ),
     sortOrder: t.Optional(
-      t.Union([t.Literal("asc"), t.Literal("desc")], { default: "desc" })
+      t.Union([t.Literal("asc"), t.Literal("desc")], { default: "desc" }),
     ),
   });
   export type paginationQuery = typeof paginationQuery.static;
@@ -49,6 +49,14 @@ export namespace AudioModel {
     limit: t.Optional(t.Number({ minimum: 1, maximum: 20, default: 5 })),
   });
   export type searchSuggestionsQuery = typeof searchSuggestionsQuery.static;
+
+  export const randomQuery = t.Object({
+    page: t.Optional(t.Number({ minimum: 1, default: 1 })),
+    limit: t.Optional(t.Number({ minimum: 1, maximum: 100, default: 20 })),
+    seed: t.Optional(t.String()),
+    firstTrackId: t.Optional(t.String()),
+  });
+  export type randomQuery = typeof randomQuery.static;
 
   export const audioMetadata = t.Object({
     title: t.Optional(t.String()),
@@ -93,7 +101,7 @@ export namespace AudioModel {
           filename: t.String(),
           error: t.String(),
         }),
-      ])
+      ]),
     ),
     totalFiles: t.Number(),
     successfulUploads: t.Number(),
