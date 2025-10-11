@@ -15,6 +15,20 @@
       "when": 1759662327499,
       "tag": "0001_premium_mattie_franklin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1760116949103,
+      "tag": "0002_overjoyed_blue_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1760162874422,
+      "tag": "0003_fair_archangel",
+      "breakpoints": true
     }
   ]
 }

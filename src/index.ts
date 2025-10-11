@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { bearer } from "@elysiajs/bearer";
 import { cors } from "@elysiajs/cors";
 import { audioController } from "./modules/audio";
+import { tokenController } from "./modules/token";
 import { authGuard } from "./utils/auth";
 import { logger } from "./utils/logger";
 import migrate from "./scripts/migrate";
@@ -36,11 +37,12 @@ const app = new Elysia()
   .use(bearer())
   .get("/", () => ({ message: ":)" }))
   .get("/favicon.ico", () => {})
+  .use(tokenController)
   .guard(
     {
       beforeHandle: authGuard(),
     },
-    (app) => app.use(audioController),
+    (app) => app.use(audioController)
   )
   .onError(({ request, code, error, set }) => {
     const errorMessage =
@@ -71,7 +73,7 @@ logger.info(
   `Server running at http://${app.server?.hostname}:${app.server?.port}`,
   {
     context: "SERVER",
-  },
+  }
 );
 logger.info(`Environment: ${process.env.NODE_ENV || "development"}`, {
   context: "SERVER",

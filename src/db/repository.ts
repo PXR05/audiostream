@@ -1,5 +1,12 @@
 import { db } from "./index";
-import { audioFiles, type NewAudioFile, type AudioFile } from "./schema";
+import {
+  audioFiles,
+  type NewAudioFile,
+  type AudioFile,
+  tokens,
+  type NewToken,
+  type Token,
+} from "./schema";
 import { eq, asc, desc, sql, or, like, count } from "drizzle-orm";
 import type { AudioModel } from "../modules/audio/model";
 
@@ -75,7 +82,7 @@ export abstract class AudioRepository {
 
   static async update(
     id: string,
-    data: Partial<NewAudioFile>,
+    data: Partial<NewAudioFile>
   ): Promise<AudioFile | null> {
     const result = await db
       .update(audioFiles)
@@ -98,7 +105,7 @@ export abstract class AudioRepository {
     options?: {
       page?: number;
       limit?: number;
-    },
+    }
   ): Promise<{ files: AudioFile[]; total: number }> {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 20;
@@ -133,8 +140,8 @@ export abstract class AudioRepository {
           like(audioFiles.title, searchPattern),
           like(audioFiles.artist, searchPattern),
           like(audioFiles.album, searchPattern),
-          like(audioFiles.filename, searchPattern),
-        ),
+          like(audioFiles.filename, searchPattern)
+        )
       )
       .orderBy(desc(relevanceScore))
       .limit(limit)
@@ -148,8 +155,8 @@ export abstract class AudioRepository {
           like(audioFiles.title, searchPattern),
           like(audioFiles.artist, searchPattern),
           like(audioFiles.album, searchPattern),
-          like(audioFiles.filename, searchPattern),
-        ),
+          like(audioFiles.filename, searchPattern)
+        )
       );
     const total = countResult[0]?.count ?? 0;
 
@@ -158,7 +165,7 @@ export abstract class AudioRepository {
 
   static async searchSuggestions(
     query: string,
-    limit: number = 5,
+    limit: number = 5
   ): Promise<AudioModel.searchSuggestion[]> {
     const searchPattern = `%${query}%`;
     const startsWithPattern = `${query}%`;
@@ -260,7 +267,7 @@ export abstract class AudioRepository {
     filename: string,
     size: number,
     metadata?: AudioModel.audioMetadata,
-    imageFile?: string,
+    imageFile?: string
   ): NewAudioFile {
     return {
       id,
@@ -279,5 +286,57 @@ export abstract class AudioRepository {
       channels: metadata?.channels ?? null,
       format: metadata?.format ?? null,
     };
+  }
+}
+
+export abstract class TokenRepository {
+  static async create(data: NewToken): Promise<Token> {
+    const result = await db.insert(tokens).values(data).returning();
+    return result[0];
+  }
+
+  static async findAll(): Promise<Token[]> {
+    return await db.select().from(tokens).orderBy(desc(tokens.createdAt));
+  }
+
+  static async findByUserId(userId: string): Promise<Token[]> {
+    return await db
+      .select()
+      .from(tokens)
+      .where(eq(tokens.userId, userId))
+      .orderBy(desc(tokens.createdAt));
+  }
+
+  static async findById(id: string): Promise<Token | null> {
+    const result = await db.select().from(tokens).where(eq(tokens.id, id));
+    return result[0] ?? null;
+  }
+
+  static async findByTokenId(tokenId: string): Promise<Token | null> {
+    const result = await db
+      .select()
+      .from(tokens)
+      .where(eq(tokens.tokenId, tokenId));
+    return result[0] ?? null;
+  }
+
+  static async updateLastUsed(id: string): Promise<void> {
+    await db
+      .update(tokens)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(tokens.id, id));
+  }
+
+  static async delete(id: string): Promise<boolean> {
+    const result = await db.delete(tokens).where(eq(tokens.id, id)).returning();
+    return result.length > 0;
+  }
+
+  static async deleteByUserId(userId: string): Promise<number> {
+    const result = await db
+      .delete(tokens)
+      .where(eq(tokens.userId, userId))
+      .returning();
+    return result.length;
   }
 }

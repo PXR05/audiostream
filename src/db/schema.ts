@@ -38,3 +38,25 @@ export const audioFiles = sqliteTable(
 
 export type AudioFile = typeof audioFiles.$inferSelect;
 export type NewAudioFile = typeof audioFiles.$inferInsert;
+
+export const tokens = sqliteTable(
+  "tokens",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    userId: text("user_id").notNull(),
+    tokenId: text("token_id").notNull().unique(),
+    hash: text("hash").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+  },
+  (table) => ({
+    createdAtIdx: index("token_created_at_idx").on(table.createdAt),
+    userIdIdx: index("token_user_id_idx").on(table.userId),
+  })
+);
+
+export type Token = typeof tokens.$inferSelect;
+export type NewToken = typeof tokens.$inferInsert;

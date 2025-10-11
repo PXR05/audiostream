@@ -8,7 +8,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "hash": "bun run src/scripts/encrypt-text.ts"
+    "hash": "bun run src/scripts/encrypt.ts"
   },
   "dependencies": {
     "@elysiajs/bearer": "^1.4.1",

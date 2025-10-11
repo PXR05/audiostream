@@ -1,11 +1,10 @@
 import { verify } from "@node-rs/argon2";
-import { env } from "bun";
 import { logger } from "./logger";
+import { TokenRepository } from "../db/repository";
 
-const VALID_TOKEN = process.env.TOKEN;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 
-async function verifyToken(hash: string, plainToken: string): Promise<boolean> {
+async function verifyHash(hash: string, plainToken: string): Promise<boolean> {
   try {
     return await verify(hash, plainToken);
   } catch (error) {
@@ -14,12 +13,56 @@ async function verifyToken(hash: string, plainToken: string): Promise<boolean> {
   }
 }
 
+export async function checkIfAdmin(token: string): Promise<boolean> {
+  if (!ADMIN_TOKEN) return false;
+  return await verifyHash(ADMIN_TOKEN, token);
+}
+
+async function verifyTokenAgainstDb(token: string): Promise<{
+  valid: boolean;
+  tokenData?: {
+    id: string;
+    name: string;
+    userId: string;
+  };
+}> {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 2) {
+      return { valid: false };
+    }
+
+    const [tokenId] = parts;
+    const dbToken = await TokenRepository.findByTokenId(tokenId);
+
+    if (!dbToken) {
+      return { valid: false };
+    }
+
+    const isValid = await verifyHash(dbToken.hash, token);
+
+    if (!isValid) {
+      return { valid: false };
+    }
+
+    return {
+      valid: true,
+      tokenData: {
+        id: dbToken.id,
+        name: dbToken.name,
+        userId: dbToken.userId,
+      },
+    };
+  } catch (error) {
+    logger.error("Token verification failed", error, { context: "AUTH" });
+    return { valid: false };
+  }
+}
+
 export const authGuard =
   (requireAdmin: boolean = false) =>
-  async ({ bearer, set }: { bearer?: string; set: any }) => {
-    if (env.NODE_ENV !== "production") {
-      return;
-    }
+  async (context: { bearer?: string; set: any; store?: any }) => {
+    const { bearer, set } = context;
 
     if (!bearer) {
       set.status = 401;
@@ -34,34 +77,47 @@ export const authGuard =
         return { error: "Server admin authentication not configured" };
       }
 
-      const isAdmin = await verifyToken(bearer,ADMIN_TOKEN);
+      const isAdmin = await verifyHash(ADMIN_TOKEN, bearer);
       if (!isAdmin) {
         set.status = 403;
         set.headers["WWW-Authenticate"] =
           'Bearer realm="api", error="insufficient_scope"';
         return { error: "Admin token required for this operation" };
       }
+
+      if (context.store) {
+        context.store.auth = { isAdmin: true };
+      }
       return;
     }
 
     if (ADMIN_TOKEN) {
-      const isAdmin = await verifyToken(bearer,ADMIN_TOKEN);
+      const isAdmin = await verifyHash(ADMIN_TOKEN, bearer);
       if (isAdmin) {
+        if (context.store) {
+          context.store.auth = { isAdmin: true };
+        }
         return;
       }
     }
 
-    if (!VALID_TOKEN) {
-      set.status = 500;
-      return { error: "Server authentication not configured" };
+    const result = await verifyTokenAgainstDb(bearer);
+    if (result.valid && result.tokenData) {
+      await TokenRepository.updateLastUsed(result.tokenData.id);
+
+      if (context.store) {
+        context.store.auth = {
+          isAdmin: false,
+          userId: result.tokenData.userId,
+          tokenId: result.tokenData.id,
+          tokenName: result.tokenData.name,
+        };
+      }
+      return;
     }
 
-    const isValid = await verifyToken(bearer, VALID_TOKEN);
-
-    if (!isValid) {
-      set.status = 401;
-      set.headers["WWW-Authenticate"] =
-        'Bearer realm="api", error="invalid_token"';
-      return { error: "Invalid token" };
-    }
+    set.status = 401;
+    set.headers["WWW-Authenticate"] =
+      'Bearer realm="api", error="invalid_token"';
+    return { error: "Invalid token" };
   };
