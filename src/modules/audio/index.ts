@@ -1,9 +1,11 @@
 import { Elysia, t } from "elysia";
 import { AudioService } from "./service";
 import { AudioModel } from "./model";
-import { authGuard } from "../../utils/auth";
+import { authPlugin } from "../../utils/auth";
 
-export const audioController = new Elysia({ prefix: "/audio" })
+export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
+  .use(authPlugin)
+
   .model({
     "audio.upload": AudioModel.uploadBody,
     "audio.youtube": AudioModel.youtubeBody,
@@ -25,6 +27,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
       });
     },
     {
+      isAuth: true,
       query: "audio.pagination",
       response: {
         200: AudioModel.audioListResponse,
@@ -41,6 +44,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
       });
     },
     {
+      isAuth: true,
       query: "audio.search",
       response: {
         200: AudioModel.audioListResponse,
@@ -54,6 +58,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
       return await AudioService.searchSuggestions(query.q, query.limit);
     },
     {
+      isAuth: true,
       query: "audio.searchSuggestions",
       response: {
         200: AudioModel.searchSuggestionsResponse,
@@ -72,6 +77,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
       });
     },
     {
+      isAuth: true,
       query: "audio.random",
       response: {
         200: AudioModel.audioListResponse,
@@ -99,7 +105,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
     },
     {
       body: "audio.upload",
-      beforeHandle: authGuard(true),
+      isAdmin: true,
       response: {
         200: t.Union([
           AudioModel.uploadResponse,
@@ -118,7 +124,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
     },
     {
       body: "audio.youtube",
-      beforeHandle: authGuard(true),
+      isAdmin: true,
       response: {
         200: AudioModel.youtubeResponse,
         400: AudioModel.errorResponse,
@@ -138,6 +144,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
       return { file };
     },
     {
+      isAuth: true,
       response: {
         200: AudioModel.audioDetailResponse,
         404: AudioModel.errorResponse,
@@ -151,7 +158,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
       return await AudioService.deleteAudio(id);
     },
     {
-      beforeHandle: authGuard(true),
+      isAdmin: true,
       response: {
         200: AudioModel.deleteResponse,
         403: AudioModel.errorResponse,
@@ -200,6 +207,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
       return bunFile;
     },
     {
+      isAuth: true,
       response: {
         404: AudioModel.errorResponse,
       },
@@ -228,6 +236,7 @@ export const audioController = new Elysia({ prefix: "/audio" })
       return Bun.file(imagePath);
     },
     {
+      isAuth: true,
       response: {
         404: AudioModel.errorResponse,
       },

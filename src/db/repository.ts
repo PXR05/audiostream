@@ -6,8 +6,14 @@ import {
   tokens,
   type NewToken,
   type Token,
+  playlists,
+  type NewPlaylist,
+  type Playlist,
+  playlistItems,
+  type NewPlaylistItem,
+  type PlaylistItem,
 } from "./schema";
-import { eq, asc, desc, sql, or, like, count } from "drizzle-orm";
+import { eq, asc, desc, sql, or, like, count, and } from "drizzle-orm";
 import type { AudioModel } from "../modules/audio/model";
 
 export abstract class AudioRepository {
@@ -338,5 +344,156 @@ export abstract class TokenRepository {
       .where(eq(tokens.userId, userId))
       .returning();
     return result.length;
+  }
+}
+
+export abstract class PlaylistRepository {
+  static async create(data: NewPlaylist): Promise<Playlist> {
+    const result = await db.insert(playlists).values(data).returning();
+    return result[0];
+  }
+
+  static async findAll(): Promise<Playlist[]> {
+    return await db.select().from(playlists).orderBy(desc(playlists.createdAt));
+  }
+
+  static async findByUserId(userId: string): Promise<Playlist[]> {
+    return await db
+      .select()
+      .from(playlists)
+      .where(eq(playlists.userId, userId))
+      .orderBy(desc(playlists.createdAt));
+  }
+
+  static async findById(id: string): Promise<Playlist | null> {
+    const result = await db
+      .select()
+      .from(playlists)
+      .where(eq(playlists.id, id));
+    return result[0] ?? null;
+  }
+
+  static async update(
+    id: string,
+    data: Partial<NewPlaylist>
+  ): Promise<Playlist | null> {
+    const result = await db
+      .update(playlists)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(playlists.id, id))
+      .returning();
+    return result[0] ?? null;
+  }
+
+  static async delete(id: string): Promise<boolean> {
+    const result = await db
+      .delete(playlists)
+      .where(eq(playlists.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  static async addItem(data: NewPlaylistItem): Promise<PlaylistItem> {
+    const result = await db.insert(playlistItems).values(data).returning();
+    return result[0];
+  }
+
+  static async getItems(playlistId: string): Promise<
+    Array<{
+      item: PlaylistItem;
+      audio: AudioFile;
+    }>
+  > {
+    const items = await db
+      .select()
+      .from(playlistItems)
+      .leftJoin(audioFiles, eq(playlistItems.audioId, audioFiles.id))
+      .where(eq(playlistItems.playlistId, playlistId))
+      .orderBy(asc(playlistItems.position));
+
+    return items
+      .filter((item) => item.audio_files !== null)
+      .map((item) => ({
+        item: item.playlist_items,
+        audio: item.audio_files!,
+      }));
+  }
+
+  static async removeItem(id: string): Promise<boolean> {
+    const result = await db
+      .delete(playlistItems)
+      .where(eq(playlistItems.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  static async findItemByAudioAndPlaylist(
+    playlistId: string,
+    audioId: string
+  ): Promise<PlaylistItem | null> {
+    const result = await db
+      .select()
+      .from(playlistItems)
+      .where(
+        and(
+          eq(playlistItems.playlistId, playlistId),
+          eq(playlistItems.audioId, audioId)
+        )
+      );
+    return result[0] ?? null;
+  }
+
+  static async getMaxPosition(playlistId: string): Promise<number> {
+    const result = await db
+      .select({ maxPos: sql<number>`MAX(${playlistItems.position})` })
+      .from(playlistItems)
+      .where(eq(playlistItems.playlistId, playlistId));
+    return result[0]?.maxPos ?? -1;
+  }
+
+  static async reorderItems(
+    playlistId: string,
+    itemId: string,
+    newPosition: number
+  ): Promise<void> {
+    const item = await db
+      .select()
+      .from(playlistItems)
+      .where(eq(playlistItems.id, itemId));
+
+    if (!item[0]) return;
+
+    const oldPosition = item[0].position;
+
+    if (oldPosition === newPosition) return;
+
+    if (oldPosition < newPosition) {
+      await db
+        .update(playlistItems)
+        .set({ position: sql`${playlistItems.position} - 1` })
+        .where(
+          and(
+            eq(playlistItems.playlistId, playlistId),
+            sql`${playlistItems.position} > ${oldPosition}`,
+            sql`${playlistItems.position} <= ${newPosition}`
+          )
+        );
+    } else {
+      await db
+        .update(playlistItems)
+        .set({ position: sql`${playlistItems.position} + 1` })
+        .where(
+          and(
+            eq(playlistItems.playlistId, playlistId),
+            sql`${playlistItems.position} >= ${newPosition}`,
+            sql`${playlistItems.position} < ${oldPosition}`
+          )
+        );
+    }
+
+    await db
+      .update(playlistItems)
+      .set({ position: newPosition })
+      .where(eq(playlistItems.id, itemId));
   }
 }

@@ -1,8 +1,21 @@
 import { verify } from "@node-rs/argon2";
+import { Elysia } from "elysia";
+import { bearer } from "@elysiajs/bearer";
 import { logger } from "./logger";
 import { TokenRepository } from "../db/repository";
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+
+export type AuthData =
+  | {
+      isAdmin: true;
+    }
+  | {
+      isAdmin: false;
+      userId: string;
+      tokenId: string;
+      tokenName: string;
+    };
 
 async function verifyHash(hash: string, plainToken: string): Promise<boolean> {
   try {
@@ -59,65 +72,82 @@ async function verifyTokenAgainstDb(token: string): Promise<{
   }
 }
 
-export const authGuard =
-  (requireAdmin: boolean = false) =>
-  async (context: { bearer?: string; set: any; store?: any }) => {
-    const { bearer, set } = context;
+export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
+  isAuth(enabled: boolean) {
+    if (!enabled) return;
 
-    if (!bearer) {
-      set.status = 401;
-      set.headers["WWW-Authenticate"] =
-        'Bearer realm="api", error="invalid_request"';
-      return { error: "Authorization header required" };
-    }
+    return {
+      resolve: async ({ bearer, set, store }) => {
+        const storeWithAuth = store as typeof store & { auth?: AuthData };
 
-    if (requireAdmin) {
-      if (!ADMIN_TOKEN) {
-        set.status = 500;
-        return { error: "Server admin authentication not configured" };
-      }
-
-      const isAdmin = await verifyHash(ADMIN_TOKEN, bearer);
-      if (!isAdmin) {
-        set.status = 403;
-        set.headers["WWW-Authenticate"] =
-          'Bearer realm="api", error="insufficient_scope"';
-        return { error: "Admin token required for this operation" };
-      }
-
-      if (context.store) {
-        context.store.auth = { isAdmin: true };
-      }
-      return;
-    }
-
-    if (ADMIN_TOKEN) {
-      const isAdmin = await verifyHash(ADMIN_TOKEN, bearer);
-      if (isAdmin) {
-        if (context.store) {
-          context.store.auth = { isAdmin: true };
+        if (!bearer) {
+          set.status = 401;
+          set.headers["WWW-Authenticate"] =
+            'Bearer realm="api", error="invalid_request"';
+          throw new Error("Authorization header required");
         }
-        return;
-      }
-    }
 
-    const result = await verifyTokenAgainstDb(bearer);
-    if (result.valid && result.tokenData) {
-      await TokenRepository.updateLastUsed(result.tokenData.id);
+        if (ADMIN_TOKEN) {
+          const isAdmin = await verifyHash(ADMIN_TOKEN, bearer);
+          if (isAdmin) {
+            const authData: AuthData = { isAdmin: true };
+            storeWithAuth.auth = authData;
+            return { auth: authData };
+          }
+        }
 
-      if (context.store) {
-        context.store.auth = {
-          isAdmin: false,
-          userId: result.tokenData.userId,
-          tokenId: result.tokenData.id,
-          tokenName: result.tokenData.name,
-        };
-      }
-      return;
-    }
+        const result = await verifyTokenAgainstDb(bearer);
+        if (result.valid && result.tokenData) {
+          await TokenRepository.updateLastUsed(result.tokenData.id);
 
-    set.status = 401;
-    set.headers["WWW-Authenticate"] =
-      'Bearer realm="api", error="invalid_token"';
-    return { error: "Invalid token" };
-  };
+          const authData: AuthData = {
+            isAdmin: false,
+            userId: result.tokenData.userId,
+            tokenId: result.tokenData.id,
+            tokenName: result.tokenData.name,
+          };
+          storeWithAuth.auth = authData;
+          return { auth: authData };
+        }
+
+        set.status = 401;
+        set.headers["WWW-Authenticate"] =
+          'Bearer realm="api", error="invalid_token"';
+        throw new Error("Invalid token");
+      },
+    };
+  },
+  isAdmin(enabled: boolean) {
+    if (!enabled) return;
+
+    return {
+      resolve: async ({ bearer, set, store }) => {
+        const storeWithAuth = store as typeof store & { auth?: AuthData };
+
+        if (!bearer) {
+          set.status = 401;
+          set.headers["WWW-Authenticate"] =
+            'Bearer realm="api", error="invalid_request"';
+          throw new Error("Authorization header required");
+        }
+
+        if (!ADMIN_TOKEN) {
+          set.status = 500;
+          throw new Error("Server admin authentication not configured");
+        }
+
+        const isAdmin = await verifyHash(ADMIN_TOKEN, bearer);
+        if (!isAdmin) {
+          set.status = 403;
+          set.headers["WWW-Authenticate"] =
+            'Bearer realm="api", error="insufficient_scope"';
+          throw new Error("Admin token required for this operation");
+        }
+
+        const authData: AuthData = { isAdmin: true };
+        storeWithAuth.auth = authData;
+        return { auth: authData };
+      },
+    };
+  },
+});

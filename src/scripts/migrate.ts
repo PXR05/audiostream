@@ -63,9 +63,9 @@ async function main() {
 
       const existing = await AudioRepository.findById(audioId);
       if (existing) {
-        logger.debug(`Skipping ${filename} - already in database`, undefined, {
-          context: "MIGRATE",
-        });
+        // logger.debug(`Skipping ${filename} - already in database`, undefined, {
+        //   context: "MIGRATE",
+        // });
         continue;
       }
 

@@ -1,13 +1,13 @@
 import { Elysia } from "elysia";
-import { bearer } from "@elysiajs/bearer";
 import { cors } from "@elysiajs/cors";
 import { audioController } from "./modules/audio";
 import { tokenController } from "./modules/token";
-import { authGuard } from "./utils/auth";
+import { playlistController } from "./modules/playlist";
 import { logger } from "./utils/logger";
 import migrate from "./scripts/migrate";
 import { mkdir } from "fs/promises";
 import { UPLOADS_DIR } from "./utils/helpers";
+import openapi from "@elysiajs/openapi";
 
 try {
   await mkdir(UPLOADS_DIR, { recursive: true });
@@ -34,16 +34,11 @@ const HOST = process.env.HOST || "0.0.0.0";
 
 const app = new Elysia()
   .use(cors())
-  .use(bearer())
+  .use(openapi())
   .get("/", () => ({ message: ":)" }))
-  .get("/favicon.ico", () => {})
   .use(tokenController)
-  .guard(
-    {
-      beforeHandle: authGuard(),
-    },
-    (app) => app.use(audioController)
-  )
+  .use(audioController)
+  .use(playlistController)
   .onError(({ request, code, error, set }) => {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";

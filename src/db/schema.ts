@@ -60,3 +60,54 @@ export const tokens = sqliteTable(
 
 export type Token = typeof tokens.$inferSelect;
 export type NewToken = typeof tokens.$inferInsert;
+
+export const playlists = sqliteTable(
+  "playlists",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    userId: text("user_id").notNull(),
+    coverImage: text("cover_image"),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => ({
+    userIdIdx: index("playlist_user_id_idx").on(table.userId),
+    createdAtIdx: index("playlist_created_at_idx").on(table.createdAt),
+  })
+);
+
+export type Playlist = typeof playlists.$inferSelect;
+export type NewPlaylist = typeof playlists.$inferInsert;
+
+export const playlistItems = sqliteTable(
+  "playlist_items",
+  {
+    id: text("id").primaryKey(),
+    playlistId: text("playlist_id")
+      .notNull()
+      .references(() => playlists.id, { onDelete: "cascade" }),
+    audioId: text("audio_id")
+      .notNull()
+      .references(() => audioFiles.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    addedAt: integer("added_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => ({
+    playlistIdIdx: index("playlist_items_playlist_id_idx").on(table.playlistId),
+    audioIdIdx: index("playlist_items_audio_id_idx").on(table.audioId),
+    playlistPositionIdx: index("playlist_items_playlist_position_idx").on(
+      table.playlistId,
+      table.position
+    ),
+  })
+);
+
+export type PlaylistItem = typeof playlistItems.$inferSelect;
+export type NewPlaylistItem = typeof playlistItems.$inferInsert;
