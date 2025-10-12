@@ -1,6 +1,6 @@
 services:
   server:
-    image: ghcr.io/pxr05/audiostream:latest
+    build: .
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     environment:
