@@ -10,6 +10,121 @@ const ALLOWED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 
 export abstract class PlaylistService {
+  static generatePlaylistId(prefix: string, name: string): string {
+    const normalized = name
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\p{L}\p{N}]+/gu, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 50);
+
+    const hasher = new Bun.CryptoHasher("sha256");
+    hasher.update(name);
+    const hash = hasher.digest("hex").slice(0, 8);
+
+    if (normalized.length > 0) {
+      return `${prefix}_${normalized}_${hash}`;
+    } else {
+      return `${prefix}_${hash}`;
+    }
+  }
+
+  static async findOrCreateArtistPlaylist(artistName: string): Promise<string> {
+    const playlistId = this.generatePlaylistId("artist", artistName);
+
+    const existing = await PlaylistRepository.findById(playlistId);
+    if (existing) {
+      return existing.id;
+    }
+
+    const playlist = await PlaylistRepository.create({
+      id: playlistId,
+      name: artistName,
+      userId: "admin",
+      coverImage: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    logger.info(`Created artist playlist: ${playlist.id} (${playlist.name})`, {
+      context: "PLAYLIST",
+    });
+
+    return playlist.id;
+  }
+
+  static async findOrCreateAlbumPlaylist(
+    albumName: string,
+    artistName?: string
+  ): Promise<string> {
+    const uniqueName = artistName ? `${albumName}_${artistName}` : albumName;
+    const playlistId = this.generatePlaylistId("album", uniqueName);
+
+    const existing = await PlaylistRepository.findById(playlistId);
+    if (existing) {
+      return existing.id;
+    }
+
+    const playlist = await PlaylistRepository.create({
+      id: playlistId,
+      name: albumName,
+      userId: "admin",
+      coverImage: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    logger.info(`Created album playlist: ${playlist.id} (${playlist.name})`, {
+      context: "PLAYLIST",
+    });
+
+    return playlist.id;
+  }
+
+  static async addTrackToAutoPlaylists(
+    audioId: string,
+    artist?: string,
+    album?: string
+  ): Promise<void> {
+    const playlistsToAdd: string[] = [];
+
+    if (artist) {
+      const artistPlaylistId = await this.findOrCreateArtistPlaylist(artist);
+      playlistsToAdd.push(artistPlaylistId);
+    }
+
+    if (album) {
+      const albumPlaylistId = await this.findOrCreateAlbumPlaylist(
+        album,
+        artist
+      );
+      playlistsToAdd.push(albumPlaylistId);
+    }
+
+    for (const playlistId of playlistsToAdd) {
+      const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
+        playlistId,
+        audioId
+      );
+
+      if (!existingItem) {
+        const maxPosition = await PlaylistRepository.getMaxPosition(playlistId);
+        await PlaylistRepository.addItem({
+          id: crypto.randomUUID(),
+          playlistId,
+          audioId,
+          position: maxPosition + 1,
+          addedAt: new Date(),
+        });
+
+        logger.info(`Added track ${audioId} to playlist ${playlistId}`, {
+          context: "PLAYLIST",
+        });
+      }
+    }
+  }
+
   static async createPlaylist(
     userId: string,
     name: string,
@@ -77,12 +192,34 @@ export abstract class PlaylistService {
   }
 
   static async getUserPlaylists(
-    userId: string
+    userId: string,
+    type?: "artist" | "album" | "user" | "auto"
   ): Promise<PlaylistModel.listResponse> {
     const playlists = await PlaylistRepository.findByUserId(userId);
 
+    const filteredPlaylists = playlists.filter((playlist) => {
+      if (!type) return true;
+
+      const isArtist = playlist.id.startsWith("artist_");
+      const isAlbum = playlist.id.startsWith("album_");
+      const isUserCreated = !isArtist && !isAlbum;
+
+      switch (type) {
+        case "artist":
+          return isArtist;
+        case "album":
+          return isAlbum;
+        case "user":
+          return isUserCreated;
+        case "auto":
+          return isArtist || isAlbum;
+        default:
+          return true;
+      }
+    });
+
     const playlistsWithCount = await Promise.all(
-      playlists.map(async (playlist) => {
+      filteredPlaylists.map(async (playlist) => {
         const items = await PlaylistRepository.getItems(playlist.id);
         return {
           id: playlist.id,
@@ -339,5 +476,32 @@ export abstract class PlaylistService {
     await PlaylistRepository.reorderItems(playlistId, itemId, newPosition);
 
     return { success: true, message: "Item reordered successfully" };
+  }
+
+  static async getPlaylistImageStream(
+    playlistId: string,
+    userId: string
+  ): Promise<{ playlist: any; imagePath: string }> {
+    const playlist = await PlaylistRepository.findById(playlistId);
+
+    if (!playlist) {
+      throw status(404, "Playlist not found");
+    }
+
+    if (playlist.userId !== userId) {
+      throw status(403, "You don't have access to this playlist");
+    }
+
+    if (!playlist.coverImage) {
+      throw status(404, "No cover image found for this playlist");
+    }
+
+    const imagePath = join(UPLOADS_DIR, playlist.coverImage);
+
+    if (!existsSync(imagePath)) {
+      throw status(404, "Cover image file not found on disk");
+    }
+
+    return { playlist, imagePath };
   }
 }

@@ -34,6 +34,18 @@ export namespace PlaylistModel {
   });
   export type reorderBody = typeof reorderBody.static;
 
+  export const listQuery = t.Object({
+    type: t.Optional(
+      t.Union([
+        t.Literal("artist"),
+        t.Literal("album"),
+        t.Literal("user"),
+        t.Literal("auto"),
+      ])
+    ),
+  });
+  export type listQuery = typeof listQuery.static;
+
   export const playlistItem = t.Object({
     id: t.String(),
     position: t.Number(),

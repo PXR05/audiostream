@@ -16,6 +16,7 @@ export const playlistController = new Elysia({
     "playlist.addItem": PlaylistModel.addItemBody,
     "playlist.itemParams": PlaylistModel.itemParams,
     "playlist.reorder": PlaylistModel.reorderBody,
+    "playlist.list": PlaylistModel.listQuery,
   })
 
   .post(
@@ -49,7 +50,7 @@ export const playlistController = new Elysia({
 
   .get(
     "/",
-    async ({ store }) => {
+    async ({ store, query }) => {
       const storeWithAuth = store as typeof store & { auth?: AuthData };
       if (!storeWithAuth.auth) {
         throw new Error("Authentication required");
@@ -59,10 +60,11 @@ export const playlistController = new Elysia({
         ? "admin"
         : storeWithAuth.auth.userId;
 
-      return await PlaylistService.getUserPlaylists(userId);
+      return await PlaylistService.getUserPlaylists(userId, query.type);
     },
     {
       isAuth: true,
+      query: "playlist.list",
       response: {
         200: PlaylistModel.listResponse,
       },
@@ -91,6 +93,46 @@ export const playlistController = new Elysia({
       isAuth: true,
       response: {
         200: PlaylistModel.detailResponse,
+        403: PlaylistModel.errorResponse,
+        404: PlaylistModel.errorResponse,
+      },
+    }
+  )
+
+  .get(
+    "/:id/image",
+    async ({ params: { id }, set, store }) => {
+      const storeWithAuth = store as typeof store & { auth?: AuthData };
+      if (!storeWithAuth.auth) {
+        throw new Error("Authentication required");
+      }
+
+      const userId = storeWithAuth.auth.isAdmin
+        ? "admin"
+        : storeWithAuth.auth.userId;
+
+      const { playlist, imagePath } =
+        await PlaylistService.getPlaylistImageStream(id, userId);
+
+      const ext = imagePath.split(".").pop()?.toLowerCase();
+      const mimeType =
+        ext === "png"
+          ? "image/png"
+          : ext === "gif"
+            ? "image/gif"
+            : ext === "webp"
+              ? "image/webp"
+              : "image/jpeg";
+
+      set.headers["content-type"] = mimeType;
+      set.headers["content-disposition"] =
+        `inline; filename="${playlist.coverImage}"`;
+
+      return Bun.file(imagePath);
+    },
+    {
+      isAuth: true,
+      response: {
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },

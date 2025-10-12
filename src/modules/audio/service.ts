@@ -13,6 +13,7 @@ import {
   getImageFileName,
 } from "../../utils/helpers";
 import { logger } from "../../utils/logger";
+import { PlaylistService } from "../playlist/service";
 
 function createSeededRandom(seed: string) {
   let hash = 0;
@@ -46,7 +47,7 @@ await mkdir(UPLOADS_DIR, { recursive: true });
 
 export abstract class AudioService {
   static async extractMetadata(
-    filePath: string,
+    filePath: string
   ): Promise<AudioModel.audioMetadata | null> {
     try {
       const metadata = await mm.parseFile(filePath);
@@ -70,7 +71,7 @@ export abstract class AudioService {
 
   static async extractAlbumArt(
     filePath: string,
-    audioId: string,
+    audioId: string
   ): Promise<string | null> {
     try {
       const metadata = await mm.parseFile(filePath);
@@ -140,7 +141,7 @@ export abstract class AudioService {
     if (file.size > MAX_FILE_SIZE) {
       throw status(
         413,
-        `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+        `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`
       );
     }
 
@@ -148,7 +149,7 @@ export abstract class AudioService {
     if (!ALLOWED_AUDIO_EXTENSIONS.includes(ext)) {
       throw status(
         400,
-        `Invalid audio format. Allowed: ${ALLOWED_AUDIO_EXTENSIONS.join(", ")}`,
+        `Invalid audio format. Allowed: ${ALLOWED_AUDIO_EXTENSIONS.join(", ")}`
       );
     }
 
@@ -173,8 +174,14 @@ export abstract class AudioService {
         filename,
         file.size,
         extractedMetadata ?? undefined,
-        extractedImage ?? undefined,
-      ),
+        extractedImage ?? undefined
+      )
+    );
+
+    await PlaylistService.addTrackToAutoPlaylists(
+      id,
+      extractedMetadata?.artist,
+      extractedMetadata?.album
     );
 
     return {
@@ -187,7 +194,7 @@ export abstract class AudioService {
   }
 
   static async uploadFiles(
-    files: File[],
+    files: File[]
   ): Promise<AudioModel.multiUploadResponse> {
     if (!files || files.length === 0) {
       throw status(400, "No files provided");
@@ -226,7 +233,7 @@ export abstract class AudioService {
   }
 
   static async downloadYoutube(
-    url: string,
+    url: string
   ): Promise<AudioModel.youtubeResponse> {
     try {
       const checkProc = Bun.spawn(["yt-dlp", "--version"], {
@@ -240,7 +247,7 @@ export abstract class AudioService {
     } catch (error) {
       throw status(
         500,
-        "yt-dlp is not installed. Please install it from https://github.com/yt-dlp/yt-dlp",
+        "yt-dlp is not installed. Please install it from https://github.com/yt-dlp/yt-dlp"
       );
     }
 
@@ -291,7 +298,7 @@ export abstract class AudioService {
           throw new Error("Video not available in your region or was deleted");
         } else if (stderr.includes("Sign in")) {
           throw new Error(
-            "Video requires authentication. Add cookies.txt to project root.",
+            "Video requires authentication. Add cookies.txt to project root."
           );
         } else {
           throw new Error(`Download failed: ${stderr.substring(0, 200)}`);
@@ -313,8 +320,14 @@ export abstract class AudioService {
           filename,
           stats.size,
           extractedMetadata ?? undefined,
-          extractedImage ?? undefined,
-        ),
+          extractedImage ?? undefined
+        )
+      );
+
+      await PlaylistService.addTrackToAutoPlaylists(
+        id,
+        extractedMetadata?.artist,
+        extractedMetadata?.album
       );
 
       logger.info(`YouTube download completed: ${id}`, { context: "YOUTUBE" });
@@ -367,7 +380,7 @@ export abstract class AudioService {
   }
 
   static async getAudioStream(
-    id: string,
+    id: string
   ): Promise<{ file: AudioModel.audioFile; filePath: string }> {
     const file = await this.getAudioById(id);
     const filePath = join(UPLOADS_DIR, file.filename);
@@ -380,7 +393,7 @@ export abstract class AudioService {
   }
 
   static async getImageStream(
-    id: string,
+    id: string
   ): Promise<{ file: AudioModel.audioFile; imagePath: string }> {
     const file = await this.getAudioById(id);
 
@@ -402,7 +415,7 @@ export abstract class AudioService {
     options?: {
       page?: number;
       limit?: number;
-    },
+    }
   ): Promise<AudioModel.audioListResponse> {
     const { page = 1, limit = 20 } = options || {};
 
@@ -428,7 +441,7 @@ export abstract class AudioService {
 
   static async searchSuggestions(
     query: string,
-    limit: number = 5,
+    limit: number = 5
   ): Promise<AudioModel.searchSuggestionsResponse> {
     const suggestions = await AudioRepository.searchSuggestions(query, limit);
     return { suggestions };
@@ -458,7 +471,7 @@ export abstract class AudioService {
 
     if (firstTrackId) {
       const firstTrackIndex = shuffledFiles.findIndex(
-        (file) => file.id === firstTrackId,
+        (file) => file.id === firstTrackId
       );
 
       if (firstTrackIndex !== -1) {
@@ -472,7 +485,7 @@ export abstract class AudioService {
     const paginatedFiles = shuffledFiles.slice(offset, offset + limit);
 
     const files = paginatedFiles.map((dbFile) =>
-      AudioRepository.toAudioModel(dbFile),
+      AudioRepository.toAudioModel(dbFile)
     );
 
     const totalPages = Math.ceil(total / limit);
