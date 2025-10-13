@@ -1,13 +1,16 @@
-import { hash } from "@node-rs/argon2";
+import { argon2id } from "hash-wasm";
 import { logger } from "../utils/logger";
 
 async function encryptText(text: string): Promise<string> {
   try {
-    const hashedText = await hash(text, {
-      memoryCost: 19456,
-      timeCost: 2,
-      outputLen: 32,
+    const hashedText = await argon2id({
+      password: text,
+      salt: new Uint8Array(16),
       parallelism: 1,
+      iterations: 2,
+      memorySize: 19456,
+      hashLength: 32,
+      outputType: "encoded",
     });
     return hashedText;
   } catch (error) {

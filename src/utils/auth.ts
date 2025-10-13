@@ -1,4 +1,4 @@
-import { verify } from "@node-rs/argon2";
+import { argon2Verify } from "hash-wasm";
 import { Elysia } from "elysia";
 import { bearer } from "@elysiajs/bearer";
 import { logger } from "./logger";
@@ -19,7 +19,7 @@ export type AuthData =
 
 async function verifyHash(hash: string, plainToken: string): Promise<boolean> {
   try {
-    return await verify(hash, plainToken);
+    return await argon2Verify({ password: plainToken, hash });
   } catch (error) {
     logger.error("Token verification failed", error, { context: "AUTH" });
     return false;

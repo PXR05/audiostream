@@ -1,4 +1,4 @@
-import { hash } from "@node-rs/argon2";
+import { argon2id, argon2Verify } from "hash-wasm";
 import { TokenRepository } from "../../db/repository";
 import { logger } from "../../utils/logger";
 import { checkIfAdmin } from "../../utils/auth";
@@ -34,11 +34,14 @@ export abstract class TokenService {
     const tokenId = crypto.randomUUID();
     const secretPart = generateSecureToken();
     const fullToken = `${tokenId}.${secretPart}`;
-    const tokenHash = await hash(fullToken, {
-      memoryCost: 19456,
-      timeCost: 2,
-      outputLen: 32,
+    const tokenHash = await argon2id({
+      password: fullToken,
+      salt: new Uint8Array(16),
       parallelism: 1,
+      iterations: 2,
+      memorySize: 19456,
+      hashLength: 32,
+      outputType: "encoded",
     });
 
     const token = await TokenRepository.create({
@@ -108,9 +111,10 @@ export abstract class TokenService {
       throw new Error("Invalid token");
     }
 
-    const isValid = await import("@node-rs/argon2").then((m) =>
-      m.verify(dbToken.hash, token)
-    );
+    const isValid = await argon2Verify({
+      password: token,
+      hash: dbToken.hash,
+    });
 
     if (!isValid) {
       throw new Error("Invalid token");

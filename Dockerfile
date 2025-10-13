@@ -10,20 +10,22 @@ RUN bun install --production
 
 COPY ./src ./src
 
+ENV NODE_ENV=production
+
+RUN bun build \
+    --minify-whitespace \
+    --minify-syntax \
+    --target bun \
+    --outfile server.js \
+    src/index.ts
+
 FROM oven/bun:alpine AS production
 
 WORKDIR /usr/src/app
 
-COPY --from=build /app/package.json .
-COPY --from=build /app/bun.lock .
-COPY --from=build /app/drizzle.config.ts .
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/src ./src
+COPY --from=build /app/server.js ./server.js
+COPY --from=build /app/src/db/migrations ./src/db/migrations
 
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV HOST=0.0.0.0
-
-CMD ["bun", "run", "src/index.ts"]
+CMD ["bun", "run", "server.js"]
 
 EXPOSE 3000
