@@ -357,12 +357,20 @@ export abstract class PlaylistRepository {
     return await db.select().from(playlists).orderBy(desc(playlists.createdAt));
   }
 
-  static async findByUserId(userId: string): Promise<Playlist[]> {
-    return await db
+  static async findByUserId(
+    userId: string,
+    limit?: number
+  ): Promise<Playlist[]> {
+    const query = db
       .select()
       .from(playlists)
       .where(eq(playlists.userId, userId))
       .orderBy(desc(playlists.createdAt));
+    if (limit) {
+      query.limit(limit);
+    }
+
+    return await query;
   }
 
   static async findById(id: string): Promise<Playlist | null> {

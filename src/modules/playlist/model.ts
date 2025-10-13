@@ -43,6 +43,7 @@ export namespace PlaylistModel {
         t.Literal("auto"),
       ])
     ),
+    limit: t.Optional(t.Number({ minimum: 1 })),
   });
   export type listQuery = typeof listQuery.static;
 

@@ -193,9 +193,10 @@ export abstract class PlaylistService {
 
   static async getUserPlaylists(
     userId: string,
-    type?: "artist" | "album" | "user" | "auto"
+    type?: "artist" | "album" | "user" | "auto",
+    limit?: number
   ): Promise<PlaylistModel.listResponse> {
-    const playlists = await PlaylistRepository.findByUserId(userId);
+    const playlists = await PlaylistRepository.findByUserId(userId, limit);
 
     const filteredPlaylists = playlists.filter((playlist) => {
       if (!type) return true;

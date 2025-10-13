@@ -60,7 +60,7 @@ export const playlistController = new Elysia({
         ? "admin"
         : storeWithAuth.auth.userId;
 
-      return await PlaylistService.getUserPlaylists(userId, query.type);
+      return await PlaylistService.getUserPlaylists(userId, query.type, query.limit);
     },
     {
       isAuth: true,
