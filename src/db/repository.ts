@@ -13,7 +13,18 @@ import {
   type NewPlaylistItem,
   type PlaylistItem,
 } from "./schema";
-import { eq, asc, desc, sql, or, like, count, and } from "drizzle-orm";
+import {
+  eq,
+  asc,
+  desc,
+  sql,
+  or,
+  like,
+  count,
+  and,
+  SQL,
+  not,
+} from "drizzle-orm";
 import type { AudioModel } from "../modules/audio/model";
 
 export abstract class AudioRepository {
@@ -359,12 +370,35 @@ export abstract class PlaylistRepository {
 
   static async findByUserId(
     userId: string,
+    type?: "artist" | "album" | "user" | "auto",
     limit?: number
   ): Promise<Playlist[]> {
+    let typeFilter: SQL | undefined;
+    switch (type) {
+      case "artist":
+        typeFilter = like(playlists.id, "%artist_%");
+        break;
+      case "album":
+        typeFilter = like(playlists.id, "%album_%");
+        break;
+      case "user":
+        typeFilter = and(
+          not(like(playlists.id, "%album_%")),
+          not(like(playlists.id, "%artist_%"))
+        )!;
+        break;
+      case "auto":
+        typeFilter = or(
+          like(playlists.id, "%album_%"),
+          like(playlists.id, "%artist_%")
+        )!;
+        break;
+    }
+
     const query = db
       .select()
       .from(playlists)
-      .where(eq(playlists.userId, userId))
+      .where(and(eq(playlists.userId, userId), typeFilter))
       .orderBy(desc(playlists.createdAt));
     if (limit) {
       query.limit(limit);

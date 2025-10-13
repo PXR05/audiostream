@@ -196,7 +196,7 @@ export abstract class PlaylistService {
     type?: "artist" | "album" | "user" | "auto",
     limit?: number
   ): Promise<PlaylistModel.listResponse> {
-    const playlists = await PlaylistRepository.findByUserId(userId, limit);
+    const playlists = await PlaylistRepository.findByUserId(userId, type, limit);
 
     const filteredPlaylists = playlists.filter((playlist) => {
       if (!type) return true;
