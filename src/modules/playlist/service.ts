@@ -56,7 +56,7 @@ export abstract class PlaylistService {
 
   static async findOrCreateAlbumPlaylist(
     albumName: string,
-    artistName?: string
+    artistName?: string,
   ): Promise<string> {
     const uniqueName = artistName ? `${albumName}_${artistName}` : albumName;
     const playlistId = this.generatePlaylistId("album", uniqueName);
@@ -82,10 +82,37 @@ export abstract class PlaylistService {
     return playlist.id;
   }
 
+  static async findOrCreateYoutubePlaylist(
+    youtubePlaylistId: string,
+    playlistTitle: string,
+  ): Promise<string> {
+    const playlistId = `youtube_${youtubePlaylistId}`;
+
+    const existing = await PlaylistRepository.findById(playlistId);
+    if (existing) {
+      return existing.id;
+    }
+
+    const playlist = await PlaylistRepository.create({
+      id: playlistId,
+      name: playlistTitle,
+      userId: "admin",
+      coverImage: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    logger.info(`Created YouTube playlist: ${playlist.id} (${playlist.name})`, {
+      context: "PLAYLIST",
+    });
+
+    return playlist.id;
+  }
+
   static async addTrackToAutoPlaylists(
     audioId: string,
     artist?: string,
-    album?: string
+    album?: string,
   ): Promise<void> {
     const playlistsToAdd: string[] = [];
 
@@ -97,7 +124,7 @@ export abstract class PlaylistService {
     if (album) {
       const albumPlaylistId = await this.findOrCreateAlbumPlaylist(
         album,
-        artist
+        artist,
       );
       playlistsToAdd.push(albumPlaylistId);
     }
@@ -105,7 +132,7 @@ export abstract class PlaylistService {
     for (const playlistId of playlistsToAdd) {
       const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
         playlistId,
-        audioId
+        audioId,
       );
 
       if (!existingItem) {
@@ -128,7 +155,7 @@ export abstract class PlaylistService {
   static async createPlaylist(
     userId: string,
     name: string,
-    coverImage?: File
+    coverImage?: File,
   ): Promise<PlaylistModel.createResponse> {
     let coverImageFile: string | undefined;
 
@@ -136,7 +163,7 @@ export abstract class PlaylistService {
       if (coverImage.size > MAX_IMAGE_SIZE) {
         throw status(
           413,
-          `Image too large. Maximum size: ${MAX_IMAGE_SIZE / (1024 * 1024)}MB`
+          `Image too large. Maximum size: ${MAX_IMAGE_SIZE / (1024 * 1024)}MB`,
         );
       }
 
@@ -144,7 +171,7 @@ export abstract class PlaylistService {
       if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
         throw status(
           400,
-          `Invalid image format. Allowed: ${ALLOWED_IMAGE_EXTENSIONS.join(", ")}`
+          `Invalid image format. Allowed: ${ALLOWED_IMAGE_EXTENSIONS.join(", ")}`,
         );
       }
 
@@ -193,34 +220,17 @@ export abstract class PlaylistService {
 
   static async getUserPlaylists(
     userId: string,
-    type?: "artist" | "album" | "user" | "auto",
-    limit?: number
+    type?: "artist" | "album" | "user" | "auto" | "youtube",
+    limit?: number,
   ): Promise<PlaylistModel.listResponse> {
-    const playlists = await PlaylistRepository.findByUserId(userId, type, limit);
-
-    const filteredPlaylists = playlists.filter((playlist) => {
-      if (!type) return true;
-
-      const isArtist = playlist.id.startsWith("artist_");
-      const isAlbum = playlist.id.startsWith("album_");
-      const isUserCreated = !isArtist && !isAlbum;
-
-      switch (type) {
-        case "artist":
-          return isArtist;
-        case "album":
-          return isAlbum;
-        case "user":
-          return isUserCreated;
-        case "auto":
-          return isArtist || isAlbum;
-        default:
-          return true;
-      }
-    });
+    const playlists = await PlaylistRepository.findByUserId(
+      userId,
+      type,
+      limit,
+    );
 
     const playlistsWithCount = await Promise.all(
-      filteredPlaylists.map(async (playlist) => {
+      playlists.map(async (playlist) => {
         const items = await PlaylistRepository.getItems(playlist.id);
         return {
           id: playlist.id,
@@ -231,7 +241,7 @@ export abstract class PlaylistService {
           updatedAt: playlist.updatedAt,
           itemCount: items.length,
         };
-      })
+      }),
     );
 
     return { playlists: playlistsWithCount };
@@ -239,7 +249,7 @@ export abstract class PlaylistService {
 
   static async getPlaylistById(
     playlistId: string,
-    userId: string
+    userId: string,
   ): Promise<PlaylistModel.detailResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -277,7 +287,7 @@ export abstract class PlaylistService {
     playlistId: string,
     userId: string,
     name?: string,
-    coverImage?: File
+    coverImage?: File,
   ): Promise<PlaylistModel.updateResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -295,7 +305,7 @@ export abstract class PlaylistService {
       if (coverImage.size > MAX_IMAGE_SIZE) {
         throw status(
           413,
-          `Image too large. Maximum size: ${MAX_IMAGE_SIZE / (1024 * 1024)}MB`
+          `Image too large. Maximum size: ${MAX_IMAGE_SIZE / (1024 * 1024)}MB`,
         );
       }
 
@@ -303,7 +313,7 @@ export abstract class PlaylistService {
       if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
         throw status(
           400,
-          `Invalid image format. Allowed: ${ALLOWED_IMAGE_EXTENSIONS.join(", ")}`
+          `Invalid image format. Allowed: ${ALLOWED_IMAGE_EXTENSIONS.join(", ")}`,
         );
       }
 
@@ -356,7 +366,7 @@ export abstract class PlaylistService {
 
   static async deletePlaylist(
     playlistId: string,
-    userId: string
+    userId: string,
   ): Promise<PlaylistModel.deleteResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -385,7 +395,7 @@ export abstract class PlaylistService {
   static async addItemToPlaylist(
     playlistId: string,
     userId: string,
-    audioId: string
+    audioId: string,
   ): Promise<PlaylistModel.addItemResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -404,7 +414,7 @@ export abstract class PlaylistService {
 
     const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
       playlistId,
-      audioId
+      audioId,
     );
 
     if (existingItem) {
@@ -437,7 +447,7 @@ export abstract class PlaylistService {
   static async removeItemFromPlaylist(
     playlistId: string,
     itemId: string,
-    userId: string
+    userId: string,
   ): Promise<PlaylistModel.removeItemResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -462,7 +472,7 @@ export abstract class PlaylistService {
     playlistId: string,
     itemId: string,
     userId: string,
-    newPosition: number
+    newPosition: number,
   ): Promise<PlaylistModel.removeItemResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -481,7 +491,7 @@ export abstract class PlaylistService {
 
   static async getPlaylistImageStream(
     playlistId: string,
-    userId: string
+    userId: string,
   ): Promise<{ playlist: any; imagePath: string }> {
     const playlist = await PlaylistRepository.findById(playlistId);
 

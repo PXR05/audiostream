@@ -41,6 +41,7 @@ export namespace PlaylistModel {
         t.Literal("album"),
         t.Literal("user"),
         t.Literal("auto"),
+        t.Literal("youtube"),
       ])
     ),
     limit: t.Optional(t.Number({ minimum: 1 })),

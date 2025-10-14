@@ -4,7 +4,7 @@ import { writeFile, mkdir, stat } from "fs/promises";
 import { join, extname } from "path";
 import * as mm from "music-metadata";
 import type { AudioModel } from "./model";
-import { AudioRepository } from "../../db/repository";
+import { AudioRepository, PlaylistRepository } from "../../db/repository";
 import {
   generateId,
   UPLOADS_DIR,
@@ -14,6 +14,20 @@ import {
 } from "../../utils/helpers";
 import { logger } from "../../utils/logger";
 import { PlaylistService } from "../playlist/service";
+
+async function downloadImage(url: string, filepath: string): Promise<boolean> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return false;
+
+    const arrayBuffer = await response.arrayBuffer();
+    await writeFile(filepath, new Uint8Array(arrayBuffer));
+    return true;
+  } catch (error) {
+    logger.error("Failed to download image", error, { context: "YOUTUBE" });
+    return false;
+  }
+}
 
 function createSeededRandom(seed: string) {
   let hash = 0;
@@ -47,7 +61,7 @@ await mkdir(UPLOADS_DIR, { recursive: true });
 
 export abstract class AudioService {
   static async extractMetadata(
-    filePath: string
+    filePath: string,
   ): Promise<AudioModel.audioMetadata | null> {
     try {
       const metadata = await mm.parseFile(filePath);
@@ -71,7 +85,7 @@ export abstract class AudioService {
 
   static async extractAlbumArt(
     filePath: string,
-    audioId: string
+    audioId: string,
   ): Promise<string | null> {
     try {
       const metadata = await mm.parseFile(filePath);
@@ -141,7 +155,7 @@ export abstract class AudioService {
     if (file.size > MAX_FILE_SIZE) {
       throw status(
         413,
-        `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`
+        `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
       );
     }
 
@@ -149,7 +163,7 @@ export abstract class AudioService {
     if (!ALLOWED_AUDIO_EXTENSIONS.includes(ext)) {
       throw status(
         400,
-        `Invalid audio format. Allowed: ${ALLOWED_AUDIO_EXTENSIONS.join(", ")}`
+        `Invalid audio format. Allowed: ${ALLOWED_AUDIO_EXTENSIONS.join(", ")}`,
       );
     }
 
@@ -174,14 +188,14 @@ export abstract class AudioService {
         filename,
         file.size,
         extractedMetadata ?? undefined,
-        extractedImage ?? undefined
-      )
+        extractedImage ?? undefined,
+      ),
     );
 
     await PlaylistService.addTrackToAutoPlaylists(
       id,
       extractedMetadata?.artist,
-      extractedMetadata?.album
+      extractedMetadata?.album,
     );
 
     return {
@@ -194,7 +208,7 @@ export abstract class AudioService {
   }
 
   static async uploadFiles(
-    files: File[]
+    files: File[],
   ): Promise<AudioModel.multiUploadResponse> {
     if (!files || files.length === 0) {
       throw status(400, "No files provided");
@@ -233,8 +247,8 @@ export abstract class AudioService {
   }
 
   static async downloadYoutube(
-    url: string
-  ): Promise<AudioModel.youtubeResponse> {
+    url: string,
+  ): Promise<AudioModel.youtubeResponse | AudioModel.youtubePlaylistResponse> {
     try {
       const checkProc = Bun.spawn(["yt-dlp", "--version"], {
         stdout: "pipe",
@@ -247,10 +261,23 @@ export abstract class AudioService {
     } catch (error) {
       throw status(
         500,
-        "yt-dlp is not installed. Please install it from https://github.com/yt-dlp/yt-dlp"
+        "yt-dlp is not installed. Please install it from https://github.com/yt-dlp/yt-dlp",
       );
     }
 
+    const isPlaylist = url.includes("list=") || url.includes("/playlist");
+
+    if (isPlaylist) {
+      return await this.downloadYoutubePlaylist(url);
+    } else {
+      return await this.downloadYoutubeSingle(url);
+    }
+  }
+
+  private static async downloadYoutubeSingle(
+    url: string,
+    playlistId?: string,
+  ): Promise<AudioModel.youtubeResponse> {
     try {
       const id = generateId();
       const filename = `${id}.mp3`;
@@ -268,6 +295,7 @@ export abstract class AudioService {
         "mp3",
         "--embed-metadata",
         "--embed-thumbnail",
+        "--no-playlist",
         "-o",
         filePath,
         url,
@@ -298,7 +326,7 @@ export abstract class AudioService {
           throw new Error("Video not available in your region or was deleted");
         } else if (stderr.includes("Sign in")) {
           throw new Error(
-            "Video requires authentication. Add cookies.txt to project root."
+            "Video requires authentication. Add cookies.txt to project root.",
           );
         } else {
           throw new Error(`Download failed: ${stderr.substring(0, 200)}`);
@@ -320,15 +348,32 @@ export abstract class AudioService {
           filename,
           stats.size,
           extractedMetadata ?? undefined,
-          extractedImage ?? undefined
-        )
+          extractedImage ?? undefined,
+        ),
       );
 
       await PlaylistService.addTrackToAutoPlaylists(
         id,
         extractedMetadata?.artist,
-        extractedMetadata?.album
+        extractedMetadata?.album,
       );
+
+      if (playlistId) {
+        const existingItem =
+          await PlaylistRepository.findItemByAudioAndPlaylist(playlistId, id);
+
+        if (!existingItem) {
+          const maxPosition =
+            await PlaylistRepository.getMaxPosition(playlistId);
+          await PlaylistRepository.addItem({
+            id: crypto.randomUUID(),
+            playlistId: playlistId,
+            audioId: id,
+            position: maxPosition + 1,
+            addedAt: new Date(),
+          });
+        }
+      }
 
       logger.info(`YouTube download completed: ${id}`, { context: "YOUTUBE" });
 
@@ -344,6 +389,185 @@ export abstract class AudioService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
       throw status(500, `Failed to download YouTube audio: ${errorMessage}`);
+    }
+  }
+
+  private static async downloadYoutubePlaylist(
+    url: string,
+  ): Promise<AudioModel.youtubePlaylistResponse> {
+    try {
+      const cookiesPath = join(process.cwd(), "cookies.txt");
+      const hasCookies = existsSync(cookiesPath);
+
+      logger.info(`Fetching YouTube playlist info: ${url}`, {
+        context: "YOUTUBE",
+      });
+
+      const infoArgs = [
+        ...(hasCookies ? ["--cookies", cookiesPath] : []),
+        "--user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+        "--dump-json",
+        "--flat-playlist",
+        url,
+      ];
+
+      const infoProc = Bun.spawn(["yt-dlp", ...infoArgs], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      const infoExitCode = await infoProc.exited;
+
+      if (infoExitCode !== 0) {
+        const stderr = await new Response(infoProc.stderr).text();
+        throw new Error(
+          `Failed to fetch playlist info: ${stderr.substring(0, 200)}`,
+        );
+      }
+
+      const stdout = await new Response(infoProc.stdout).text();
+      const lines = stdout.trim().split("\n");
+      const videos = lines.map((line) => JSON.parse(line));
+
+      if (videos.length === 0) {
+        throw new Error("No videos found in playlist");
+      }
+
+      const playlistInfo = videos[0];
+      const playlistId = playlistInfo.playlist_id || playlistInfo.id;
+      const playlistTitle =
+        playlistInfo.playlist_title || playlistInfo.title || "YouTube Playlist";
+      const playlistThumbnails = playlistInfo.thumbnails;
+
+      logger.info(
+        `Downloading ${videos.length} videos from playlist: ${playlistTitle}`,
+        { context: "YOUTUBE" },
+      );
+
+      const youtubePlaylistId = `youtube_${playlistId}`;
+      const dbPlaylistId = await PlaylistService.findOrCreateYoutubePlaylist(
+        playlistId,
+        playlistTitle,
+      );
+
+      const existingPlaylist = await PlaylistRepository.findById(dbPlaylistId);
+      let playlistCoverImage: string | null =
+        existingPlaylist?.coverImage || null;
+
+      if (
+        !playlistCoverImage &&
+        playlistThumbnails &&
+        playlistThumbnails.length > 0
+      ) {
+        const bestThumbnail = playlistThumbnails[playlistThumbnails.length - 1];
+        if (bestThumbnail.url) {
+          const imageExt = ".jpg";
+          const imageFileName = `playlist_youtube_${playlistId}${imageExt}`;
+          const imagePath = join(UPLOADS_DIR, imageFileName);
+
+          logger.info(`Downloading playlist thumbnail: ${bestThumbnail.url}`, {
+            context: "YOUTUBE",
+          });
+
+          const downloaded = await downloadImage(bestThumbnail.url, imagePath);
+          if (downloaded) {
+            playlistCoverImage = imageFileName;
+            logger.info(`Playlist thumbnail saved: ${imageFileName}`, {
+              context: "YOUTUBE",
+            });
+          }
+        }
+      }
+
+      const downloadPromises = videos.map(async (video, index) => {
+        try {
+          logger.info(
+            `Downloading video ${index + 1}/${videos.length}: ${video.title || video.url}`,
+            { context: "YOUTUBE" },
+          );
+
+          const videoUrl =
+            video.url || `https://www.youtube.com/watch?v=${video.id}`;
+          const result = await this.downloadYoutubeSingle(
+            videoUrl,
+            dbPlaylistId,
+          );
+
+          return result;
+        } catch (error: any) {
+          const errorMessage = error.message || "Unknown error occurred";
+          logger.error(
+            `Failed to download video: ${video.title || video.url}`,
+            error,
+            { context: "YOUTUBE" },
+          );
+
+          return {
+            success: false as const,
+            title: video.title || video.url || "Unknown",
+            error: errorMessage,
+          };
+        }
+      });
+
+      const results = await Promise.all(downloadPromises);
+      const successfulDownloads = results.filter((r) => r.success).length;
+      const failedDownloads = results.filter((r) => !r.success).length;
+      const totalVideos = videos.length;
+      const allSuccessful = failedDownloads === 0;
+
+      if (!playlistCoverImage && successfulDownloads > 0) {
+        const firstSuccessfulTrack = results.find(
+          (r) => r.success && "imageFile" in r,
+        );
+        if (
+          firstSuccessfulTrack &&
+          "imageFile" in firstSuccessfulTrack &&
+          firstSuccessfulTrack.imageFile
+        ) {
+          playlistCoverImage = firstSuccessfulTrack.imageFile;
+          logger.info(
+            `Using first track's image as playlist cover: ${playlistCoverImage}`,
+            { context: "YOUTUBE" },
+          );
+        }
+      }
+
+      if (
+        playlistCoverImage &&
+        playlistCoverImage !== existingPlaylist?.coverImage
+      ) {
+        await PlaylistRepository.update(dbPlaylistId, {
+          coverImage: playlistCoverImage,
+        });
+        logger.info(`Updated playlist cover image: ${playlistCoverImage}`, {
+          context: "YOUTUBE",
+        });
+      }
+
+      logger.info(
+        `Playlist download completed: ${successfulDownloads}/${totalVideos} successful`,
+        { context: "YOUTUBE" },
+      );
+
+      return {
+        success: allSuccessful,
+        isPlaylist: true as const,
+        playlistId: youtubePlaylistId,
+        playlistTitle,
+        results,
+        totalVideos,
+        successfulDownloads,
+        failedDownloads,
+        message: allSuccessful
+          ? `Successfully downloaded all ${successfulDownloads} videos from playlist`
+          : `Downloaded ${successfulDownloads} of ${totalVideos} videos. ${failedDownloads} failed.`,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      throw status(500, `Failed to download YouTube playlist: ${errorMessage}`);
     }
   }
 
@@ -380,7 +604,7 @@ export abstract class AudioService {
   }
 
   static async getAudioStream(
-    id: string
+    id: string,
   ): Promise<{ file: AudioModel.audioFile; filePath: string }> {
     const file = await this.getAudioById(id);
     const filePath = join(UPLOADS_DIR, file.filename);
@@ -393,7 +617,7 @@ export abstract class AudioService {
   }
 
   static async getImageStream(
-    id: string
+    id: string,
   ): Promise<{ file: AudioModel.audioFile; imagePath: string }> {
     const file = await this.getAudioById(id);
 
@@ -415,7 +639,7 @@ export abstract class AudioService {
     options?: {
       page?: number;
       limit?: number;
-    }
+    },
   ): Promise<AudioModel.audioListResponse> {
     const { page = 1, limit = 20 } = options || {};
 
@@ -441,7 +665,7 @@ export abstract class AudioService {
 
   static async searchSuggestions(
     query: string,
-    limit: number = 5
+    limit: number = 5,
   ): Promise<AudioModel.searchSuggestionsResponse> {
     const suggestions = await AudioRepository.searchSuggestions(query, limit);
     return { suggestions };
@@ -471,7 +695,7 @@ export abstract class AudioService {
 
     if (firstTrackId) {
       const firstTrackIndex = shuffledFiles.findIndex(
-        (file) => file.id === firstTrackId
+        (file) => file.id === firstTrackId,
       );
 
       if (firstTrackIndex !== -1) {
@@ -485,7 +709,7 @@ export abstract class AudioService {
     const paginatedFiles = shuffledFiles.slice(offset, offset + limit);
 
     const files = paginatedFiles.map((dbFile) =>
-      AudioRepository.toAudioModel(dbFile)
+      AudioRepository.toAudioModel(dbFile),
     );
 
     const totalPages = Math.ceil(total / limit);

@@ -370,7 +370,7 @@ export abstract class PlaylistRepository {
 
   static async findByUserId(
     userId: string,
-    type?: "artist" | "album" | "user" | "auto",
+    type?: "artist" | "album" | "user" | "auto" | "youtube",
     limit?: number
   ): Promise<Playlist[]> {
     let typeFilter: SQL | undefined;
@@ -381,16 +381,21 @@ export abstract class PlaylistRepository {
       case "album":
         typeFilter = like(playlists.id, "%album_%");
         break;
+      case "youtube":
+        typeFilter = like(playlists.id, "youtube_%");
+        break;
       case "user":
         typeFilter = and(
           not(like(playlists.id, "%album_%")),
-          not(like(playlists.id, "%artist_%"))
+          not(like(playlists.id, "%artist_%")),
+          not(like(playlists.id, "youtube_%"))
         )!;
         break;
       case "auto":
         typeFilter = or(
           like(playlists.id, "%album_%"),
-          like(playlists.id, "%artist_%")
+          like(playlists.id, "%artist_%"),
+          like(playlists.id, "youtube_%")
         )!;
         break;
     }

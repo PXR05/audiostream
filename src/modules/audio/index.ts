@@ -32,7 +32,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.audioListResponse,
       },
-    }
+    },
   )
 
   .get(
@@ -49,7 +49,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.audioListResponse,
       },
-    }
+    },
   )
 
   .get(
@@ -63,7 +63,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.searchSuggestionsResponse,
       },
-    }
+    },
   )
 
   .get(
@@ -82,7 +82,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.audioListResponse,
       },
-    }
+    },
   )
 
   .post(
@@ -114,7 +114,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         400: AudioModel.errorResponse,
         413: AudioModel.errorResponse,
       },
-    }
+    },
   )
 
   .post(
@@ -126,11 +126,14 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       body: "audio.youtube",
       isAdmin: true,
       response: {
-        200: AudioModel.youtubeResponse,
+        200: t.Union([
+          AudioModel.youtubeResponse,
+          AudioModel.youtubePlaylistResponse,
+        ]),
         400: AudioModel.errorResponse,
         500: AudioModel.errorResponse,
       },
-    }
+    },
   )
 
   .guard({
@@ -149,7 +152,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         200: AudioModel.audioDetailResponse,
         404: AudioModel.errorResponse,
       },
-    }
+    },
   )
 
   .delete(
@@ -165,7 +168,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         404: AudioModel.errorResponse,
         500: AudioModel.errorResponse,
       },
-    }
+    },
   )
 
   .get(
@@ -211,7 +214,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         404: AudioModel.errorResponse,
       },
-    }
+    },
   )
 
   .get(
@@ -240,5 +243,5 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         404: AudioModel.errorResponse,
       },
-    }
+    },
   );

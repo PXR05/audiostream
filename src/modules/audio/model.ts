@@ -120,6 +120,28 @@ export namespace AudioModel {
   });
   export type youtubeResponse = typeof youtubeResponse.static;
 
+  export const youtubePlaylistResponse = t.Object({
+    success: t.Boolean(),
+    isPlaylist: t.Literal(true),
+    playlistId: t.String(),
+    playlistTitle: t.String(),
+    results: t.Array(
+      t.Union([
+        youtubeResponse,
+        t.Object({
+          success: t.Literal(false),
+          title: t.String(),
+          error: t.String(),
+        }),
+      ]),
+    ),
+    totalVideos: t.Number(),
+    successfulDownloads: t.Number(),
+    failedDownloads: t.Number(),
+    message: t.String(),
+  });
+  export type youtubePlaylistResponse = typeof youtubePlaylistResponse.static;
+
   export const audioListResponse = t.Object({
     files: t.Array(audioFile),
     count: t.Number(),
