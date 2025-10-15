@@ -444,12 +444,16 @@ export abstract class AudioService {
     url: string,
   ): Promise<AudioModel.youtubePlaylistResponse> {
     try {
-      const cookiesPath = join(process.cwd(), "cookies.txt");
+      const cookiesPath = "cookies.txt";
       const hasCookies = existsSync(cookiesPath);
 
       logger.info(`Fetching YouTube playlist info: ${url}`, {
         context: "YOUTUBE",
       });
+
+      if (hasCookies) {
+        logger.info(`Using cookies in ${cookiesPath}`);
+      }
 
       const infoArgs = [
         ...(hasCookies ? ["--cookies", cookiesPath] : []),
