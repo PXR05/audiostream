@@ -97,9 +97,17 @@ export abstract class AudioRepository {
     return result[0] ?? null;
   }
 
+  static async findByVideoId(videoId: string): Promise<AudioFile | null> {
+    const result = await db
+      .select()
+      .from(audioFiles)
+      .where(like(audioFiles.id, `%_${videoId}`));
+    return result[0] ?? null;
+  }
+
   static async update(
     id: string,
-    data: Partial<NewAudioFile>
+    data: Partial<NewAudioFile>,
   ): Promise<AudioFile | null> {
     const result = await db
       .update(audioFiles)
@@ -122,7 +130,7 @@ export abstract class AudioRepository {
     options?: {
       page?: number;
       limit?: number;
-    }
+    },
   ): Promise<{ files: AudioFile[]; total: number }> {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 20;
@@ -157,8 +165,8 @@ export abstract class AudioRepository {
           like(audioFiles.title, searchPattern),
           like(audioFiles.artist, searchPattern),
           like(audioFiles.album, searchPattern),
-          like(audioFiles.filename, searchPattern)
-        )
+          like(audioFiles.filename, searchPattern),
+        ),
       )
       .orderBy(desc(relevanceScore))
       .limit(limit)
@@ -172,8 +180,8 @@ export abstract class AudioRepository {
           like(audioFiles.title, searchPattern),
           like(audioFiles.artist, searchPattern),
           like(audioFiles.album, searchPattern),
-          like(audioFiles.filename, searchPattern)
-        )
+          like(audioFiles.filename, searchPattern),
+        ),
       );
     const total = countResult[0]?.count ?? 0;
 
@@ -182,7 +190,7 @@ export abstract class AudioRepository {
 
   static async searchSuggestions(
     query: string,
-    limit: number = 5
+    limit: number = 5,
   ): Promise<AudioModel.searchSuggestion[]> {
     const searchPattern = `%${query}%`;
     const startsWithPattern = `${query}%`;
@@ -284,7 +292,7 @@ export abstract class AudioRepository {
     filename: string,
     size: number,
     metadata?: AudioModel.audioMetadata,
-    imageFile?: string
+    imageFile?: string,
   ): NewAudioFile {
     return {
       id,
@@ -371,7 +379,7 @@ export abstract class PlaylistRepository {
   static async findByUserId(
     userId: string,
     type?: "artist" | "album" | "user" | "auto" | "youtube",
-    limit?: number
+    limit?: number,
   ): Promise<Playlist[]> {
     let typeFilter: SQL | undefined;
     switch (type) {
@@ -388,14 +396,14 @@ export abstract class PlaylistRepository {
         typeFilter = and(
           not(like(playlists.id, "%album_%")),
           not(like(playlists.id, "%artist_%")),
-          not(like(playlists.id, "youtube_%"))
+          not(like(playlists.id, "youtube_%")),
         )!;
         break;
       case "auto":
         typeFilter = or(
           like(playlists.id, "%album_%"),
           like(playlists.id, "%artist_%"),
-          like(playlists.id, "youtube_%")
+          like(playlists.id, "youtube_%"),
         )!;
         break;
     }
@@ -422,7 +430,7 @@ export abstract class PlaylistRepository {
 
   static async update(
     id: string,
-    data: Partial<NewPlaylist>
+    data: Partial<NewPlaylist>,
   ): Promise<Playlist | null> {
     const result = await db
       .update(playlists)
@@ -476,7 +484,7 @@ export abstract class PlaylistRepository {
 
   static async findItemByAudioAndPlaylist(
     playlistId: string,
-    audioId: string
+    audioId: string,
   ): Promise<PlaylistItem | null> {
     const result = await db
       .select()
@@ -484,8 +492,8 @@ export abstract class PlaylistRepository {
       .where(
         and(
           eq(playlistItems.playlistId, playlistId),
-          eq(playlistItems.audioId, audioId)
-        )
+          eq(playlistItems.audioId, audioId),
+        ),
       );
     return result[0] ?? null;
   }
@@ -501,7 +509,7 @@ export abstract class PlaylistRepository {
   static async reorderItems(
     playlistId: string,
     itemId: string,
-    newPosition: number
+    newPosition: number,
   ): Promise<void> {
     const item = await db
       .select()
@@ -522,8 +530,8 @@ export abstract class PlaylistRepository {
           and(
             eq(playlistItems.playlistId, playlistId),
             sql`${playlistItems.position} > ${oldPosition}`,
-            sql`${playlistItems.position} <= ${newPosition}`
-          )
+            sql`${playlistItems.position} <= ${newPosition}`,
+          ),
         );
     } else {
       await db
@@ -533,8 +541,8 @@ export abstract class PlaylistRepository {
           and(
             eq(playlistItems.playlistId, playlistId),
             sql`${playlistItems.position} >= ${newPosition}`,
-            sql`${playlistItems.position} < ${oldPosition}`
-          )
+            sql`${playlistItems.position} < ${oldPosition}`,
+          ),
         );
     }
 

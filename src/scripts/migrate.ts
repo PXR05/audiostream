@@ -8,14 +8,20 @@ import {
   ALLOWED_AUDIO_EXTENSIONS,
   ALLOWED_IMAGE_EXTENSIONS,
   getImageFileName,
+  generateId,
 } from "../utils/helpers";
 import type { AudioModel } from "../modules/audio/model";
 import { logger } from "../utils/logger";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { db } from "../db";
 
+function extractVideoIdFromFilename(filename: string): string | null {
+  const match = filename.match(/\[([^\]]+)\][^[]*$/);
+  return match ? match[1] : null;
+}
+
 async function extractMetadata(
-  filePath: string
+  filePath: string,
 ): Promise<AudioModel.audioMetadata | null> {
   try {
     const metadata = await mm.parseFile(filePath);
@@ -49,7 +55,7 @@ async function main() {
   try {
     const files = await readdir(UPLOADS_DIR);
     const audioFiles = files.filter((file) =>
-      ALLOWED_AUDIO_EXTENSIONS.includes(extname(file).toLowerCase())
+      ALLOWED_AUDIO_EXTENSIONS.includes(extname(file).toLowerCase()),
     );
 
     logger.info(`Found ${audioFiles.length} audio files to migrate`, {
@@ -59,7 +65,9 @@ async function main() {
     for (const filename of audioFiles) {
       const filePath = join(UPLOADS_DIR, filename);
       const stats = await stat(filePath);
-      const audioId = filename.replace(/\.[^/.]+$/, "").split("_")[0];
+
+      const videoId = extractVideoIdFromFilename(filename);
+      const audioId = videoId ? generateId() + "_" + videoId : generateId();
 
       const existing = await AudioRepository.findById(audioId);
       if (existing) {
@@ -74,7 +82,7 @@ async function main() {
       const metadata = await extractMetadata(filePath);
 
       const imageFiles = ALLOWED_IMAGE_EXTENSIONS.map((ext) =>
-        getImageFileName(audioId, ext)
+        getImageFileName(audioId, ext),
       );
 
       let imageFile: string | undefined;
@@ -92,8 +100,8 @@ async function main() {
           filename,
           stats.size,
           metadata ?? undefined,
-          imageFile
-        )
+          imageFile,
+        ),
       );
 
       logger.info(`✓ Migrated ${filename}`, { context: "MIGRATE" });

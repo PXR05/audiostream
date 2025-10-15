@@ -277,7 +277,47 @@ export abstract class AudioService {
     playlistId?: string,
   ): Promise<AudioModel.youtubeResponse> {
     try {
-      const id = generateId();
+      const videoId = new URL(url).searchParams.get("v");
+
+      if (videoId) {
+        const existing = await AudioRepository.findByVideoId(videoId);
+        if (existing) {
+          logger.info(`Video ${videoId} already exists, skipping download`, {
+            context: "YOUTUBE",
+          });
+
+          if (playlistId) {
+            const existingItem =
+              await PlaylistRepository.findItemByAudioAndPlaylist(
+                playlistId,
+                existing.id,
+              );
+
+            if (!existingItem) {
+              const maxPosition =
+                await PlaylistRepository.getMaxPosition(playlistId);
+              await PlaylistRepository.addItem({
+                id: crypto.randomUUID(),
+                playlistId: playlistId,
+                audioId: existing.id,
+                position: maxPosition + 1,
+                addedAt: new Date(),
+              });
+            }
+          }
+
+          return {
+            success: true,
+            id: existing.id,
+            filename: existing.filename,
+            title: existing.title || existing.filename,
+            imageFile: existing.imageFile || undefined,
+            message: "Video already exists in database",
+          };
+        }
+      }
+
+      const id = generateId() + "_" + (videoId || "yt");
       const filename = `${id}.mp3`;
       const filePath = join(UPLOADS_DIR, filename);
       const cookiesPath = join(process.cwd(), "cookies.txt");
@@ -564,12 +604,57 @@ export abstract class AudioService {
         ).replace(".webm", ".mp3");
 
         try {
+          if (videoId) {
+            const existing = await AudioRepository.findByVideoId(videoId);
+            if (existing) {
+              logger.info(
+                `Video ${videoId} already exists, skipping (${index + 1}/${downloadedFiles.length})`,
+                { context: "YOUTUBE" },
+              );
+
+              if (existsSync(originalFilePath)) {
+                try {
+                  unlinkSync(originalFilePath);
+                } catch (e) {}
+              }
+
+              const existingItem =
+                await PlaylistRepository.findItemByAudioAndPlaylist(
+                  dbPlaylistId,
+                  existing.id,
+                );
+
+              if (!existingItem) {
+                const maxPosition =
+                  await PlaylistRepository.getMaxPosition(dbPlaylistId);
+                await PlaylistRepository.addItem({
+                  id: crypto.randomUUID(),
+                  playlistId: dbPlaylistId,
+                  audioId: existing.id,
+                  position: maxPosition + 1,
+                  addedAt: new Date(),
+                });
+              }
+
+              results.push({
+                success: true,
+                id: existing.id,
+                filename: existing.filename,
+                title: existing.title || videoTitle,
+                imageFile: existing.imageFile || undefined,
+                message: "Already exists in database",
+              });
+
+              continue;
+            }
+          }
+
           if (!existsSync(originalFilePath)) {
             throw new Error(`Downloaded file not found: ${originalFilePath}`);
           }
 
-          const id = generateId();
-          const filename = `${id}_${videoId}.mp3`;
+          const id = generateId() + "_" + videoId;
+          const filename = `${id}.mp3`;
           const newFilePath = join(UPLOADS_DIR, filename);
 
           await rename(originalFilePath, newFilePath);
