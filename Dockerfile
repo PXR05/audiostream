@@ -4,9 +4,8 @@ WORKDIR /app
 
 COPY package.json package.json
 COPY drizzle.config.ts drizzle.config.ts
-COPY bun.lock bun.lock
 
-RUN bun install --production
+RUN bun install
 
 COPY ./src ./src
 
