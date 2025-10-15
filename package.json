@@ -19,8 +19,8 @@
     "drizzle-orm": "^0.44.6",
     "elysia": "^1.4.11",
     "hash-wasm": "^4.12.0",
-    "music-metadata": "^11.9.0",
-    "sharp": "^0.34.4"
+    "jimp": "0.22.12",
+    "music-metadata": "^11.9.0"
   },
   "devDependencies": {
     "bun-types": "^1.3.0",

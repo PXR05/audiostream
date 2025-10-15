@@ -3,7 +3,7 @@ import { existsSync, unlinkSync } from "fs";
 import { writeFile, stat, rename } from "fs/promises";
 import { join, extname } from "path";
 import * as mm from "music-metadata";
-import sharp from "sharp";
+import jimp from "jimp";
 import type { AudioModel } from "./model";
 import { AudioRepository, PlaylistRepository } from "../../db/repository";
 import {
@@ -25,9 +25,8 @@ async function downloadImage(url: string, filepath: string): Promise<boolean> {
     const arrayBuffer = await response.arrayBuffer();
     const webpFilepath = filepath.replace(/\.(jpg|jpeg|png|gif)$/i, ".webp");
 
-    await sharp(Buffer.from(arrayBuffer))
-      .webp({ quality: 85 })
-      .toFile(webpFilepath);
+    const image = await jimp.read(Buffer.from(arrayBuffer));
+    await image.quality(85).writeAsync(webpFilepath);
 
     return true;
   } catch (error) {
@@ -103,7 +102,8 @@ export abstract class AudioService {
       const webpImageFileName = getWebPImageFileName(audioId);
       const webpImagePath = join(UPLOADS_DIR, webpImageFileName);
 
-      await sharp(picture.data).webp({ quality: 85 }).toFile(webpImagePath);
+      const image = await jimp.read(Buffer.from(picture.data));
+      await image.quality(85).writeAsync(webpImagePath);
 
       return webpImageFileName;
     } catch (error) {

@@ -1,4 +1,4 @@
-FROM oven/bun:slim AS build
+FROM oven/bun:alpine AS build
 
 WORKDIR /app
 
@@ -19,13 +19,11 @@ RUN bun build \
     --outfile server.js \
     src/index.ts
 
-FROM oven/bun:slim AS production
+FROM oven/bun:alpine AS production
 
 WORKDIR /usr/src/app
 
-RUN add-apt-repository ppa:tomtomtom/yt-dlp    
-RUN apt update                                 
-RUN apt install yt-dlp                         
+RUN apk -U add yt-dlp
 
 COPY --from=build /app/server.js ./server.js
 COPY --from=build /app/src/db/migrations ./src/db/migrations

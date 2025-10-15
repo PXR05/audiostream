@@ -1,7 +1,7 @@
 import { readdir, unlink } from "fs/promises";
 import { join, extname } from "path";
 import { existsSync } from "fs";
-import sharp from "sharp";
+import jimp from "jimp";
 import { UPLOADS_DIR } from "../utils/helpers";
 import { logger } from "../utils/logger";
 
@@ -12,7 +12,8 @@ async function convertImageToWebP(
   deleteOriginal: boolean = false
 ): Promise<boolean> {
   try {
-    await sharp(inputPath).webp({ quality }).toFile(outputPath);
+    const image = await jimp.read(inputPath);
+    await image.quality(quality).writeAsync(outputPath);
 
     logger.info(`✓ Converted: ${inputPath} → ${outputPath}`, {
       context: "IMAGE_CONVERSION",
