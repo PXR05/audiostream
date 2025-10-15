@@ -26,3 +26,7 @@ export function getImageFileName(
 ): string {
   return `${audioId}_image${extension}`;
 }
+
+export function getWebPImageFileName(audioId: string): string {
+  return `${audioId}_image.webp`;
+}

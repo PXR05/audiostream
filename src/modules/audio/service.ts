@@ -3,6 +3,7 @@ import { existsSync, unlinkSync } from "fs";
 import { writeFile, stat, rename } from "fs/promises";
 import { join, extname } from "path";
 import * as mm from "music-metadata";
+import sharp from "sharp";
 import type { AudioModel } from "./model";
 import { AudioRepository, PlaylistRepository } from "../../db/repository";
 import {
@@ -11,6 +12,7 @@ import {
   ALLOWED_AUDIO_EXTENSIONS,
   MAX_FILE_SIZE,
   getImageFileName,
+  getWebPImageFileName,
 } from "../../utils/helpers";
 import { logger } from "../../utils/logger";
 import { PlaylistService } from "../playlist/service";
@@ -21,7 +23,12 @@ async function downloadImage(url: string, filepath: string): Promise<boolean> {
     if (!response.ok) return false;
 
     const arrayBuffer = await response.arrayBuffer();
-    await writeFile(filepath, new Uint8Array(arrayBuffer));
+    const webpFilepath = filepath.replace(/\.(jpg|jpeg|png|gif)$/i, ".webp");
+
+    await sharp(Buffer.from(arrayBuffer))
+      .webp({ quality: 85 })
+      .toFile(webpFilepath);
+
     return true;
   } catch (error) {
     logger.error("Failed to download image", error, { context: "YOUTUBE" });
@@ -59,7 +66,7 @@ function shuffleWithSeed<T>(array: T[], seed: string): T[] {
 
 export abstract class AudioService {
   static async extractMetadata(
-    filePath: string,
+    filePath: string
   ): Promise<AudioModel.audioMetadata | null> {
     try {
       const metadata = await mm.parseFile(filePath);
@@ -83,7 +90,7 @@ export abstract class AudioService {
 
   static async extractAlbumArt(
     filePath: string,
-    audioId: string,
+    audioId: string
   ): Promise<string | null> {
     try {
       const metadata = await mm.parseFile(filePath);
@@ -93,17 +100,12 @@ export abstract class AudioService {
         return null;
       }
 
-      const extension =
-        picture.format === "image/jpeg"
-          ? ".jpg"
-          : picture.format === "image/png"
-            ? ".png"
-            : ".jpg";
-      const imageFileName = getImageFileName(audioId, extension);
-      const imagePath = join(UPLOADS_DIR, imageFileName);
+      const webpImageFileName = getWebPImageFileName(audioId);
+      const webpImagePath = join(UPLOADS_DIR, webpImageFileName);
 
-      await writeFile(imagePath, picture.data);
-      return imageFileName;
+      await sharp(picture.data).webp({ quality: 85 }).toFile(webpImagePath);
+
+      return webpImageFileName;
     } catch (error) {
       logger.error("Album art extraction failed", error, { context: "AUDIO" });
       return null;
@@ -153,7 +155,7 @@ export abstract class AudioService {
     if (file.size > MAX_FILE_SIZE) {
       throw status(
         413,
-        `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+        `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`
       );
     }
 
@@ -161,7 +163,7 @@ export abstract class AudioService {
     if (!ALLOWED_AUDIO_EXTENSIONS.includes(ext)) {
       throw status(
         400,
-        `Invalid audio format. Allowed: ${ALLOWED_AUDIO_EXTENSIONS.join(", ")}`,
+        `Invalid audio format. Allowed: ${ALLOWED_AUDIO_EXTENSIONS.join(", ")}`
       );
     }
 
@@ -186,14 +188,14 @@ export abstract class AudioService {
         filename,
         file.size,
         extractedMetadata ?? undefined,
-        extractedImage ?? undefined,
-      ),
+        extractedImage ?? undefined
+      )
     );
 
     await PlaylistService.addTrackToAutoPlaylists(
       id,
       extractedMetadata?.artist,
-      extractedMetadata?.album,
+      extractedMetadata?.album
     );
 
     return {
@@ -206,7 +208,7 @@ export abstract class AudioService {
   }
 
   static async uploadFiles(
-    files: File[],
+    files: File[]
   ): Promise<AudioModel.multiUploadResponse> {
     if (!files || files.length === 0) {
       throw status(400, "No files provided");
@@ -245,7 +247,7 @@ export abstract class AudioService {
   }
 
   static async downloadYoutube(
-    url: string,
+    url: string
   ): Promise<AudioModel.youtubeResponse | AudioModel.youtubePlaylistResponse> {
     try {
       const checkProc = Bun.spawn(["yt-dlp", "--version"], {
@@ -259,7 +261,7 @@ export abstract class AudioService {
     } catch (error) {
       throw status(
         500,
-        "yt-dlp is not installed. Please install it from https://github.com/yt-dlp/yt-dlp",
+        "yt-dlp is not installed. Please install it from https://github.com/yt-dlp/yt-dlp"
       );
     }
 
@@ -274,7 +276,7 @@ export abstract class AudioService {
 
   private static async downloadYoutubeSingle(
     url: string,
-    playlistId?: string,
+    playlistId?: string
   ): Promise<AudioModel.youtubeResponse> {
     try {
       const videoId = new URL(url).searchParams.get("v");
@@ -290,7 +292,7 @@ export abstract class AudioService {
             const existingItem =
               await PlaylistRepository.findItemByAudioAndPlaylist(
                 playlistId,
-                existing.id,
+                existing.id
               );
 
             if (!existingItem) {
@@ -376,7 +378,7 @@ export abstract class AudioService {
           throw new Error("Video not available in your region or was deleted");
         } else if (stderr.includes("Sign in")) {
           throw new Error(
-            "Video requires authentication. Add cookies.txt to project root.",
+            "Video requires authentication. Add cookies.txt to project root."
           );
         } else {
           throw new Error(`Download failed: ${stderr.substring(0, 200)}`);
@@ -398,14 +400,14 @@ export abstract class AudioService {
           filename,
           stats.size,
           extractedMetadata ?? undefined,
-          extractedImage ?? undefined,
-        ),
+          extractedImage ?? undefined
+        )
       );
 
       await PlaylistService.addTrackToAutoPlaylists(
         id,
         extractedMetadata?.artist,
-        extractedMetadata?.album,
+        extractedMetadata?.album
       );
 
       if (playlistId) {
@@ -443,7 +445,7 @@ export abstract class AudioService {
   }
 
   private static async downloadYoutubePlaylist(
-    url: string,
+    url: string
   ): Promise<AudioModel.youtubePlaylistResponse> {
     try {
       const cookiesPath = "cookies.txt";
@@ -476,7 +478,7 @@ export abstract class AudioService {
       if (infoExitCode !== 0) {
         const stderr = await new Response(infoProc.stderr).text();
         throw new Error(
-          `Failed to fetch playlist info: ${stderr.substring(0, 200)}`,
+          `Failed to fetch playlist info: ${stderr.substring(0, 200)}`
         );
       }
 
@@ -498,13 +500,13 @@ export abstract class AudioService {
 
       logger.info(
         `Downloading ${videos.length} videos from playlist: ${playlistTitle}`,
-        { context: "YOUTUBE" },
+        { context: "YOUTUBE" }
       );
 
       const youtubePlaylistId = `youtube_${playlistId}`;
       const dbPlaylistId = await PlaylistService.findOrCreateYoutubePlaylist(
         playlistId,
-        playlistTitle,
+        playlistTitle
       );
 
       const existingPlaylist = await PlaylistRepository.findById(dbPlaylistId);
@@ -520,6 +522,7 @@ export abstract class AudioService {
         if (bestThumbnail.url) {
           const imageExt = ".jpg";
           const imageFileName = `playlist_youtube_${playlistId}${imageExt}`;
+          const webpImageFileName = `playlist_youtube_${playlistId}.webp`;
           const imagePath = join(UPLOADS_DIR, imageFileName);
 
           logger.info(`Downloading playlist thumbnail: ${bestThumbnail.url}`, {
@@ -528,10 +531,22 @@ export abstract class AudioService {
 
           const downloaded = await downloadImage(bestThumbnail.url, imagePath);
           if (downloaded) {
-            playlistCoverImage = imageFileName;
-            logger.info(`Playlist thumbnail saved: ${imageFileName}`, {
-              context: "YOUTUBE",
-            });
+            // Check if WebP version was created
+            const webpPath = join(UPLOADS_DIR, webpImageFileName);
+            if (existsSync(webpPath)) {
+              playlistCoverImage = webpImageFileName;
+              logger.info(
+                `Playlist thumbnail saved as WebP: ${webpImageFileName}`,
+                {
+                  context: "YOUTUBE",
+                }
+              );
+            } else {
+              playlistCoverImage = imageFileName;
+              logger.info(`Playlist thumbnail saved: ${imageFileName}`, {
+                context: "YOUTUBE",
+              });
+            }
           }
         }
       }
@@ -619,7 +634,7 @@ export abstract class AudioService {
             if (existing) {
               logger.info(
                 `Video ${videoId} already exists, skipping (${index + 1}/${downloadedFiles.length})`,
-                { context: "YOUTUBE" },
+                { context: "YOUTUBE" }
               );
 
               if (existsSync(originalFilePath)) {
@@ -631,7 +646,7 @@ export abstract class AudioService {
               const existingItem =
                 await PlaylistRepository.findItemByAudioAndPlaylist(
                   dbPlaylistId,
-                  existing.id,
+                  existing.id
                 );
 
               if (!existingItem) {
@@ -680,20 +695,20 @@ export abstract class AudioService {
               filename,
               stats.size,
               extractedMetadata ?? undefined,
-              extractedImage ?? undefined,
-            ),
+              extractedImage ?? undefined
+            )
           );
 
           await PlaylistService.addTrackToAutoPlaylists(
             id,
             extractedMetadata?.artist,
-            extractedMetadata?.album,
+            extractedMetadata?.album
           );
 
           const existingItem =
             await PlaylistRepository.findItemByAudioAndPlaylist(
               dbPlaylistId,
-              id,
+              id
             );
 
           if (!existingItem) {
@@ -710,7 +725,7 @@ export abstract class AudioService {
 
           logger.info(
             `Processed video ${index + 1}/${downloadedFiles.length}: ${videoTitle}`,
-            { context: "YOUTUBE" },
+            { context: "YOUTUBE" }
           );
 
           results.push({
@@ -748,7 +763,7 @@ export abstract class AudioService {
 
       if (!playlistCoverImage && successfulDownloads > 0) {
         const firstSuccessfulTrack = results.find(
-          (r) => r.success && "imageFile" in r,
+          (r) => r.success && "imageFile" in r
         );
         if (
           firstSuccessfulTrack &&
@@ -758,7 +773,7 @@ export abstract class AudioService {
           playlistCoverImage = firstSuccessfulTrack.imageFile;
           logger.info(
             `Using first track's image as playlist cover: ${playlistCoverImage}`,
-            { context: "YOUTUBE" },
+            { context: "YOUTUBE" }
           );
         }
       }
@@ -777,7 +792,7 @@ export abstract class AudioService {
 
       logger.info(
         `Playlist download completed: ${successfulDownloads}/${totalVideos} successful`,
-        { context: "YOUTUBE" },
+        { context: "YOUTUBE" }
       );
 
       return {
@@ -833,7 +848,7 @@ export abstract class AudioService {
   }
 
   static async getAudioStream(
-    id: string,
+    id: string
   ): Promise<{ file: AudioModel.audioFile; filePath: string }> {
     const file = await this.getAudioById(id);
     const filePath = join(UPLOADS_DIR, file.filename);
@@ -846,12 +861,26 @@ export abstract class AudioService {
   }
 
   static async getImageStream(
-    id: string,
+    id: string
   ): Promise<{ file: AudioModel.audioFile; imagePath: string }> {
     const file = await this.getAudioById(id);
 
     if (!file.imageFile) {
       throw status(404, "No image file found for this audio");
+    }
+
+    const baseImageName = file.imageFile.substring(
+      0,
+      file.imageFile.lastIndexOf(".")
+    );
+    const webpImageName = `${baseImageName}.webp`;
+    const webpImagePath = join(UPLOADS_DIR, webpImageName);
+
+    if (existsSync(webpImagePath)) {
+      return {
+        file: { ...file, imageFile: webpImageName },
+        imagePath: webpImagePath,
+      };
     }
 
     const imagePath = join(UPLOADS_DIR, file.imageFile);
@@ -868,7 +897,7 @@ export abstract class AudioService {
     options?: {
       page?: number;
       limit?: number;
-    },
+    }
   ): Promise<AudioModel.audioListResponse> {
     const { page = 1, limit = 20 } = options || {};
 
@@ -894,7 +923,7 @@ export abstract class AudioService {
 
   static async searchSuggestions(
     query: string,
-    limit: number = 5,
+    limit: number = 5
   ): Promise<AudioModel.searchSuggestionsResponse> {
     const suggestions = await AudioRepository.searchSuggestions(query, limit);
     return { suggestions };
@@ -924,7 +953,7 @@ export abstract class AudioService {
 
     if (firstTrackId) {
       const firstTrackIndex = shuffledFiles.findIndex(
-        (file) => file.id === firstTrackId,
+        (file) => file.id === firstTrackId
       );
 
       if (firstTrackIndex !== -1) {
@@ -938,7 +967,7 @@ export abstract class AudioService {
     const paginatedFiles = shuffledFiles.slice(offset, offset + limit);
 
     const files = paginatedFiles.map((dbFile) =>
-      AudioRepository.toAudioModel(dbFile),
+      AudioRepository.toAudioModel(dbFile)
     );
 
     const totalPages = Math.ceil(total / limit);
