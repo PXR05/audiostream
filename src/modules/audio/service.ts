@@ -490,7 +490,9 @@ export abstract class AudioService {
         }
       }
 
-      const downloadPromises = videos.map(async (video, index) => {
+      const results = [];
+      for (let index = 0; index < videos.length; index++) {
+        const video = videos[index];
         try {
           logger.info(
             `Downloading video ${index + 1}/${videos.length}: ${video.title || video.url}`,
@@ -504,7 +506,7 @@ export abstract class AudioService {
             dbPlaylistId,
           );
 
-          return result;
+          results.push(result);
         } catch (error: any) {
           const errorMessage = error.message || "Unknown error occurred";
           logger.error(
@@ -513,15 +515,13 @@ export abstract class AudioService {
             { context: "YOUTUBE" },
           );
 
-          return {
+          results.push({
             success: false as const,
             title: video.title || video.url || "Unknown",
             error: errorMessage,
-          };
+          });
         }
-      });
-
-      const results = await Promise.all(downloadPromises);
+      }
       const successfulDownloads = results.filter((r) => r.success).length;
       const failedDownloads = results.filter((r) => !r.success).length;
       const totalVideos = videos.length;
