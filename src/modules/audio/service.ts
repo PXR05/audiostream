@@ -328,6 +328,8 @@ export abstract class AudioService {
         ...(hasCookies ? ["--cookies", cookiesPath] : []),
         "--user-agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+        "-f",
+        "bestaudio",
         "-x",
         "--audio-format",
         "mp3",
@@ -482,6 +484,8 @@ export abstract class AudioService {
       const lines = stdout.trim().split("\n");
       const videos = lines.map((line) => JSON.parse(line));
 
+      logger.info(JSON.stringify(videos, 2, null));
+
       if (videos.length === 0) {
         throw new Error("No videos found in playlist");
       }
@@ -538,6 +542,8 @@ export abstract class AudioService {
         ...(hasCookies ? ["--cookies", cookiesPath] : []),
         "--user-agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+        "-f",
+        "bestaudio",
         "-x",
         "--audio-format",
         "mp3",
