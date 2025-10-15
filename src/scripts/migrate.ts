@@ -14,6 +14,7 @@ import type { AudioModel } from "../modules/audio/model";
 import { logger } from "../utils/logger";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { db } from "../db";
+import { AudioService } from "../modules/audio/service";
 
 function extractVideoIdFromFilename(filename: string): string | null {
   const match = filename.match(/\[([^\]]+)\][^[]*$/);
@@ -96,6 +97,25 @@ async function main() {
         if (existsSync(imgPath)) {
           imageFile = imgFile;
           break;
+        }
+      }
+
+      if (!imageFile) {
+        logger.debug(
+          `No image found for ${filename}, attempting extraction...`,
+          {
+            context: "MIGRATE",
+          },
+        );
+        const extractedImage = await AudioService.extractAlbumArt(
+          filePath,
+          audioId,
+        );
+        if (extractedImage) {
+          imageFile = extractedImage;
+          logger.debug(`✓ Extracted album art: ${extractedImage}`, {
+            context: "MIGRATE",
+          });
         }
       }
 
