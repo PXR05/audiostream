@@ -1,11 +1,12 @@
-FROM oven/bun AS build
+FROM oven/bun:slim AS build
 
 WORKDIR /app
 
 COPY package.json package.json
 COPY drizzle.config.ts drizzle.config.ts
+COPY bun.lock bun.lock
 
-RUN bun install
+RUN bun install --production
 
 COPY ./src ./src
 
@@ -18,7 +19,7 @@ RUN bun build \
     --outfile server.js \
     src/index.ts
 
-FROM oven/bun:alpine AS production
+FROM oven/bun:slim AS production
 
 WORKDIR /usr/src/app
 
