@@ -484,7 +484,7 @@ export abstract class AudioService {
       const lines = stdout.trim().split("\n");
       const videos = lines.map((line) => JSON.parse(line));
 
-      logger.info(JSON.stringify(videos, 2, null));
+      logger.info(JSON.stringify(videos, null, 2));
 
       if (videos.length === 0) {
         throw new Error("No videos found in playlist");

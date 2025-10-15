@@ -1,7 +1,7 @@
 import { AudioRepository } from "../db/repository";
 import { readdir, stat } from "fs/promises";
 import { join, extname } from "path";
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import * as mm from "music-metadata";
 import {
   UPLOADS_DIR,
@@ -57,6 +57,11 @@ async function main() {
     const audioFiles = files.filter((file) =>
       ALLOWED_AUDIO_EXTENSIONS.includes(extname(file).toLowerCase()),
     );
+    audioFiles.sort((a, b) => {
+      const aTime = statSync(join(UPLOADS_DIR, a)).mtimeMs;
+      const bTime = statSync(join(UPLOADS_DIR, b)).mtimeMs;
+      return bTime - aTime;
+    });
 
     logger.info(`Found ${audioFiles.length} audio files to migrate`, {
       context: "MIGRATE",
