@@ -34,7 +34,7 @@ try {
 }
 
 try {
-  await convertAllImagesToWebP(85, true);
+  await convertAllImagesToWebP(85, false);
   logger.info("Image conversion to WebP completed", { context: "STARTUP" });
 } catch (error) {
   logger.error("Image conversion to WebP failed", error, {
