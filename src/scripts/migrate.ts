@@ -59,7 +59,7 @@ async function main() {
     for (const filename of audioFiles) {
       const filePath = join(UPLOADS_DIR, filename);
       const stats = await stat(filePath);
-      const audioId = filename.replace(/\.[^/.]+$/, "");
+      const audioId = filename.replace(/\.[^/.]+$/, "").split("_")[0];
 
       const existing = await AudioRepository.findById(audioId);
       if (existing) {

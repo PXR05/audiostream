@@ -1,6 +1,6 @@
 import { status } from "elysia";
 import { existsSync, unlinkSync } from "fs";
-import { writeFile, mkdir, stat } from "fs/promises";
+import { writeFile, stat, rename } from "fs/promises";
 import { join, extname } from "path";
 import * as mm from "music-metadata";
 import type { AudioModel } from "./model";
@@ -56,8 +56,6 @@ function shuffleWithSeed<T>(array: T[], seed: string): T[] {
 
   return shuffled;
 }
-
-await mkdir(UPLOADS_DIR, { recursive: true });
 
 export abstract class AudioService {
   static async extractMetadata(
@@ -490,38 +488,164 @@ export abstract class AudioService {
         }
       }
 
-      const results = [];
-      for (let index = 0; index < videos.length; index++) {
-        const video = videos[index];
+      const outputTemplate = join(UPLOADS_DIR, "%(id)s.%(ext)s");
+
+      const ytDlpArgs = [
+        ...(hasCookies ? ["--cookies", cookiesPath] : []),
+        "--user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+        "-x",
+        "--audio-format",
+        "mp3",
+        "--embed-metadata",
+        "--embed-thumbnail",
+        "--parse-metadata",
+        "%(artist,uploader,channel)s:%(meta_artist)s",
+        "--parse-metadata",
+        "%(meta_artist)s:%(album_artist)s",
+        "--parse-metadata",
+        "%(meta_artist)s:%(artist)s",
+        "--replace-in-metadata",
+        "artist",
+        "^([^,&]+).*",
+        "\\1",
+        "--print-json",
+        "-o",
+        outputTemplate,
+        url,
+      ];
+
+      logger.info(`Starting playlist download with yt-dlp`, {
+        context: "YOUTUBE",
+      });
+
+      const proc = Bun.spawn(["yt-dlp", ...ytDlpArgs], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      const exitCode = await proc.exited;
+      const stdoutText = await new Response(proc.stdout).text();
+      const stderrText = await new Response(proc.stderr).text();
+
+      if (exitCode !== 0) {
+        logger.error("yt-dlp playlist download failed", new Error(stderrText), {
+          context: "YOUTUBE",
+        });
+        throw new Error(`Download failed: ${stderrText.substring(0, 200)}`);
+      }
+
+      const downloadedFiles: any[] = [];
+      const jsonLines = stdoutText
+        .trim()
+        .split("\n")
+        .filter((line) => line.trim());
+
+      for (const line of jsonLines) {
         try {
+          const info = JSON.parse(line);
+          if (info.filepath || info._filename) {
+            downloadedFiles.push(info);
+          }
+        } catch (e) {}
+      }
+
+      logger.info(`Processing ${downloadedFiles.length} downloaded files`, {
+        context: "YOUTUBE",
+      });
+
+      const results = [];
+      for (let index = 0; index < downloadedFiles.length; index++) {
+        const fileInfo = downloadedFiles[index];
+        const videoId = fileInfo.id || fileInfo.display_id;
+        const videoTitle = fileInfo.title || "Unknown";
+        const originalFilePath = (
+          fileInfo.filepath || fileInfo._filename
+        ).replace(".webm", ".mp3");
+
+        try {
+          if (!existsSync(originalFilePath)) {
+            throw new Error(`Downloaded file not found: ${originalFilePath}`);
+          }
+
+          const id = generateId();
+          const filename = `${id}_${videoId}.mp3`;
+          const newFilePath = join(UPLOADS_DIR, filename);
+
+          await rename(originalFilePath, newFilePath);
+
+          const stats = await stat(newFilePath);
+
+          const extractedMetadata = await this.extractMetadata(newFilePath);
+          const extractedImage = await this.extractAlbumArt(newFilePath, id);
+
+          await AudioRepository.create(
+            AudioRepository.fromMetadata(
+              id,
+              filename,
+              stats.size,
+              extractedMetadata ?? undefined,
+              extractedImage ?? undefined,
+            ),
+          );
+
+          await PlaylistService.addTrackToAutoPlaylists(
+            id,
+            extractedMetadata?.artist,
+            extractedMetadata?.album,
+          );
+
+          const existingItem =
+            await PlaylistRepository.findItemByAudioAndPlaylist(
+              dbPlaylistId,
+              id,
+            );
+
+          if (!existingItem) {
+            const maxPosition =
+              await PlaylistRepository.getMaxPosition(dbPlaylistId);
+            await PlaylistRepository.addItem({
+              id: crypto.randomUUID(),
+              playlistId: dbPlaylistId,
+              audioId: id,
+              position: maxPosition + 1,
+              addedAt: new Date(),
+            });
+          }
+
           logger.info(
-            `Downloading video ${index + 1}/${videos.length}: ${video.title || video.url}`,
-            { context: "YOUTUBE" },
-          );
-
-          const videoUrl =
-            video.url || `https://www.youtube.com/watch?v=${video.id}`;
-          const result = await this.downloadYoutubeSingle(
-            videoUrl,
-            dbPlaylistId,
-          );
-
-          results.push(result);
-        } catch (error: any) {
-          const errorMessage = error.message || "Unknown error occurred";
-          logger.error(
-            `Failed to download video: ${video.title || video.url}`,
-            error,
+            `Processed video ${index + 1}/${downloadedFiles.length}: ${videoTitle}`,
             { context: "YOUTUBE" },
           );
 
           results.push({
+            success: true,
+            id,
+            filename,
+            title: extractedMetadata?.title || videoTitle,
+            imageFile: extractedImage || undefined,
+            message: "Downloaded successfully",
+          });
+        } catch (error: any) {
+          const errorMessage = error.message || "Unknown error occurred";
+          logger.error(`Failed to process video: ${videoTitle}`, error, {
+            context: "YOUTUBE",
+          });
+
+          if (originalFilePath && existsSync(originalFilePath)) {
+            try {
+              unlinkSync(originalFilePath);
+            } catch (e) {}
+          }
+
+          results.push({
             success: false as const,
-            title: video.title || video.url || "Unknown",
+            title: videoTitle,
             error: errorMessage,
           });
         }
       }
+
       const successfulDownloads = results.filter((r) => r.success).length;
       const failedDownloads = results.filter((r) => !r.success).length;
       const totalVideos = videos.length;

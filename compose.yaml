@@ -9,4 +9,5 @@ services:
     volumes:
       - ./uploads:/usr/src/app/uploads:rw
       - ./audiostream.db:/usr/src/app/audiostream.db:rw
+      - ./cookies.txt:/usr/src/app/cookies.txt:rw
     restart: unless-stopped
