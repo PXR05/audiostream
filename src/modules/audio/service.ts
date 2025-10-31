@@ -282,7 +282,7 @@ export abstract class AudioService {
       const videoId = new URL(url).searchParams.get("v");
 
       if (videoId) {
-        const existing = await AudioRepository.findByVideoId(videoId);
+        const existing = await AudioRepository.findByYoutubeId(videoId);
         if (existing) {
           logger.info(`Video ${videoId} already exists, skipping download`, {
             context: "YOUTUBE",
@@ -531,7 +531,6 @@ export abstract class AudioService {
 
           const downloaded = await downloadImage(bestThumbnail.url, imagePath);
           if (downloaded) {
-            // Check if WebP version was created
             const webpPath = join(UPLOADS_DIR, webpImageFileName);
             if (existsSync(webpPath)) {
               playlistCoverImage = webpImageFileName;
@@ -630,7 +629,7 @@ export abstract class AudioService {
 
         try {
           if (videoId) {
-            const existing = await AudioRepository.findByVideoId(videoId);
+            const existing = await AudioRepository.findByYoutubeId(videoId);
             if (existing) {
               logger.info(
                 `Video ${videoId} already exists, skipping (${index + 1}/${downloadedFiles.length})`,
@@ -695,7 +694,8 @@ export abstract class AudioService {
               filename,
               stats.size,
               extractedMetadata ?? undefined,
-              extractedImage ?? undefined
+              extractedImage ?? undefined,
+              videoId,
             )
           );
 

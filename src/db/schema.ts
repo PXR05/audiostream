@@ -11,6 +11,7 @@ export const audioFiles = sqliteTable(
   "audio_files",
   {
     id: text("id").primaryKey(),
+    youtubeId: text("youtube_id"),
     filename: text("filename").notNull().unique(),
     size: integer("size").notNull(),
     uploadedAt: integer("uploaded_at", { mode: "timestamp" })
@@ -27,13 +28,14 @@ export const audioFiles = sqliteTable(
     sampleRate: integer("sample_rate"),
     channels: integer("channels"),
     format: text("format"),
+    extra: text("extra"),
   },
   (table) => ({
     titleIdx: index("title_idx").on(table.title),
     artistIdx: index("artist_idx").on(table.artist),
     albumIdx: index("album_idx").on(table.album),
     uploadedAtIdx: index("uploaded_at_idx").on(table.uploadedAt),
-  })
+  }),
 );
 
 export type AudioFile = typeof audioFiles.$inferSelect;
@@ -55,7 +57,7 @@ export const tokens = sqliteTable(
   (table) => ({
     createdAtIdx: index("token_created_at_idx").on(table.createdAt),
     userIdIdx: index("token_user_id_idx").on(table.userId),
-  })
+  }),
 );
 
 export type Token = typeof tokens.$inferSelect;
@@ -78,7 +80,7 @@ export const playlists = sqliteTable(
   (table) => ({
     userIdIdx: index("playlist_user_id_idx").on(table.userId),
     createdAtIdx: index("playlist_created_at_idx").on(table.createdAt),
-  })
+  }),
 );
 
 export type Playlist = typeof playlists.$inferSelect;
@@ -104,9 +106,9 @@ export const playlistItems = sqliteTable(
     audioIdIdx: index("playlist_items_audio_id_idx").on(table.audioId),
     playlistPositionIdx: index("playlist_items_playlist_position_idx").on(
       table.playlistId,
-      table.position
+      table.position,
     ),
-  })
+  }),
 );
 
 export type PlaylistItem = typeof playlistItems.$inferSelect;

@@ -73,9 +73,10 @@ async function main() {
       const stats = await stat(filePath);
 
       const videoId = extractVideoIdFromFilename(filename);
-      const audioId = videoId ? generateId() + "_" + videoId : generateId();
 
-      const existing = await AudioRepository.findById(audioId);
+      const existing =
+        (videoId && (await AudioRepository.findByYoutubeId(videoId))) ||
+        (await AudioRepository.findByFilename(filename));
       if (existing) {
         // logger.debug(`Skipping ${filename} - already in database`, undefined, {
         //   context: "MIGRATE",
@@ -85,6 +86,7 @@ async function main() {
 
       logger.info(`Migrating ${filename}...`, { context: "MIGRATE" });
 
+      const audioId = generateId() + "_" + videoId;
       const metadata = await extractMetadata(filePath);
 
       const imageFiles = ALLOWED_IMAGE_EXTENSIONS.map((ext) =>

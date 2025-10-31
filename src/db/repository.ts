@@ -97,11 +97,11 @@ export abstract class AudioRepository {
     return result[0] ?? null;
   }
 
-  static async findByVideoId(videoId: string): Promise<AudioFile | null> {
+  static async findByYoutubeId(videoId: string): Promise<AudioFile | null> {
     const result = await db
       .select()
       .from(audioFiles)
-      .where(like(audioFiles.id, `%_${videoId}`));
+      .where(eq(audioFiles.youtubeId, videoId));
     return result[0] ?? null;
   }
 
@@ -293,9 +293,11 @@ export abstract class AudioRepository {
     size: number,
     metadata?: AudioModel.audioMetadata,
     imageFile?: string,
+    youtubeId?: string,
   ): NewAudioFile {
     return {
       id,
+      youtubeId,
       filename,
       size,
       uploadedAt: new Date(),
