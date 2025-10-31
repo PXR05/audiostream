@@ -1,6 +1,6 @@
 import { status } from "elysia";
 import { existsSync, unlinkSync } from "fs";
-import { writeFile, stat, rename } from "fs/promises";
+import { stat, rename } from "fs/promises";
 import { join, extname } from "path";
 import * as mm from "music-metadata";
 import jimp from "jimp";
@@ -11,7 +11,6 @@ import {
   UPLOADS_DIR,
   ALLOWED_AUDIO_EXTENSIONS,
   MAX_FILE_SIZE,
-  getImageFileName,
   getWebPImageFileName,
 } from "../../utils/helpers";
 import { logger } from "../../utils/logger";
@@ -23,10 +22,7 @@ async function downloadImage(url: string, filepath: string): Promise<boolean> {
     if (!response.ok) return false;
 
     const arrayBuffer = await response.arrayBuffer();
-    const webpFilepath = filepath.replace(/\.(jpg|jpeg|png|gif)$/i, ".webp");
-
-    const image = await jimp.read(Buffer.from(arrayBuffer));
-    await image.quality(85).writeAsync(webpFilepath);
+    await Bun.write(filepath, Buffer.from(arrayBuffer));
 
     return true;
   } catch (error) {
@@ -520,9 +516,15 @@ export abstract class AudioService {
       ) {
         const bestThumbnail = playlistThumbnails[playlistThumbnails.length - 1];
         if (bestThumbnail.url) {
-          const imageExt = ".jpg";
+          const urlObj = new URL(bestThumbnail.url);
+          let imageExt = extname(urlObj.pathname).toLowerCase();
+          if (
+            !imageExt ||
+            !/^\.(jpe?g|png|gif|bmp|webp|avif)$/i.test(imageExt)
+          ) {
+            imageExt = ".jpg";
+          }
           const imageFileName = `playlist_youtube_${playlistId}${imageExt}`;
-          const webpImageFileName = `playlist_youtube_${playlistId}.webp`;
           const imagePath = join(UPLOADS_DIR, imageFileName);
 
           logger.info(`Downloading playlist thumbnail: ${bestThumbnail.url}`, {
@@ -531,21 +533,10 @@ export abstract class AudioService {
 
           const downloaded = await downloadImage(bestThumbnail.url, imagePath);
           if (downloaded) {
-            const webpPath = join(UPLOADS_DIR, webpImageFileName);
-            if (existsSync(webpPath)) {
-              playlistCoverImage = webpImageFileName;
-              logger.info(
-                `Playlist thumbnail saved as WebP: ${webpImageFileName}`,
-                {
-                  context: "YOUTUBE",
-                }
-              );
-            } else {
-              playlistCoverImage = imageFileName;
-              logger.info(`Playlist thumbnail saved: ${imageFileName}`, {
-                context: "YOUTUBE",
-              });
-            }
+            playlistCoverImage = imageFileName;
+            logger.info(`Playlist thumbnail saved: ${imageFileName}`, {
+              context: "YOUTUBE",
+            });
           }
         }
       }
@@ -695,7 +686,7 @@ export abstract class AudioService {
               stats.size,
               extractedMetadata ?? undefined,
               extractedImage ?? undefined,
-              videoId,
+              videoId
             )
           );
 
