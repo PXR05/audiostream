@@ -318,14 +318,20 @@ export abstract class AudioService {
       const id = generateId() + "_" + (videoId || "yt");
       const filename = `${id}.mp3`;
       const filePath = join(UPLOADS_DIR, filename);
-      const cookiesPath = join(process.cwd(), "cookies.txt");
 
+      const cookiesPath = "cookies.txt";
       const hasCookies = existsSync(cookiesPath);
+
+      logger.info(`Fetching YouTube playlist info: ${url}`, {
+        context: "YOUTUBE",
+      });
 
       const ytDlpArgs = [
         ...(hasCookies ? ["--cookies", cookiesPath] : []),
         "--user-agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+        "--extractor-args",
+        "youtube:player_client=default,mweb",
         "-f",
         "bestaudio",
         "-x",
@@ -334,7 +340,7 @@ export abstract class AudioService {
         "--embed-metadata",
         "--embed-thumbnail",
         "--parse-metadata",
-        "%(artist,uploader,channel)s:%(meta_artist)s",
+        "%(artist,uploader,channel,creator)s:%(meta_artist)s",
         "--parse-metadata",
         "%(meta_artist)s:%(album_artist)s",
         "--parse-metadata",
@@ -555,7 +561,7 @@ export abstract class AudioService {
         "--embed-metadata",
         "--embed-thumbnail",
         "--parse-metadata",
-        "%(artist,uploader,channel)s:%(meta_artist)s",
+        "%(artist,uploader,channel,creator)s:%(meta_artist)s",
         "--parse-metadata",
         "%(meta_artist)s:%(album_artist)s",
         "--parse-metadata",

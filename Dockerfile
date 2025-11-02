@@ -23,7 +23,13 @@ FROM oven/bun:slim AS production
 
 WORKDIR /usr/src/app
 
-RUN apt-get update && apt-get install -y python3 && apt-get install -y curl
+COPY --from=mwader/static-ffmpeg:8.0 /ffmpeg /usr/local/bin/
+COPY --from=mwader/static-ffmpeg:8.0 /ffprobe /usr/local/bin/
+
+RUN apt-get update 
+RUN apt-get install -y python3 --no-install-recommends
+RUN apt-get install -y curl
+
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/bin/yt-dlp
 RUN chmod a+rx /usr/bin/yt-dlp
 
