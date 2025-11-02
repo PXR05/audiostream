@@ -60,6 +60,143 @@ function shuffleWithSeed<T>(array: T[], seed: string): T[] {
 }
 
 export abstract class AudioService {
+  private static getYtDlpBaseArgs(hasCookies: boolean): string[] {
+    return [
+      ...(hasCookies ? ["--cookies", "cookies.txt"] : []),
+      "--extractor-args",
+      "youtube:player_client=default,tv_simply",
+      "-f",
+      "bestaudio",
+      "-x",
+      "--audio-format",
+      "mp3",
+      "--embed-metadata",
+      "--embed-thumbnail",
+      "--parse-metadata",
+      "%(artist,uploader,channel,creator)s:%(meta_artist)s",
+      "--parse-metadata",
+      "%(meta_artist)s:%(album_artist)s",
+      "--parse-metadata",
+      "%(meta_artist)s:%(artist)s",
+      "--replace-in-metadata",
+      "artist",
+      "^([^,&]+).*",
+      "\\1",
+    ];
+  }
+
+  private static handleYtDlpError(stderr: string): never {
+    if (stderr.includes("Private video")) {
+      throw new Error("Video is private or unavailable");
+    } else if (stderr.includes("not available")) {
+      throw new Error("Video not available in your region or was deleted");
+    } else if (stderr.includes("Sign in")) {
+      throw new Error(
+        "Video requires authentication. Add cookies.txt to project root."
+      );
+    } else {
+      throw new Error(`Download failed: ${stderr.substring(0, 200)}`);
+    }
+  }
+
+  private static async processDownloadedVideo(
+    filePath: string,
+    id: string,
+    filename: string,
+    fileSize: number,
+    videoId?: string,
+    playlistId?: string
+  ): Promise<AudioModel.youtubeResponse> {
+    const extractedMetadata = await this.extractMetadata(filePath);
+    const extractedImage = await this.extractAlbumArt(filePath, id);
+
+    await AudioRepository.create(
+      AudioRepository.fromMetadata(
+        id,
+        filename,
+        fileSize,
+        extractedMetadata ?? undefined,
+        extractedImage ?? undefined,
+        videoId
+      )
+    );
+
+    await PlaylistService.addTrackToAutoPlaylists(
+      id,
+      extractedMetadata?.artist,
+      extractedMetadata?.album
+    );
+
+    if (playlistId) {
+      const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
+        playlistId,
+        id
+      );
+
+      if (!existingItem) {
+        const maxPosition = await PlaylistRepository.getMaxPosition(playlistId);
+        await PlaylistRepository.addItem({
+          id: crypto.randomUUID(),
+          playlistId: playlistId,
+          audioId: id,
+          position: maxPosition + 1,
+          addedAt: new Date(),
+        });
+      }
+    }
+
+    return {
+      success: true,
+      id,
+      filename,
+      title: extractedMetadata?.title || filename,
+      imageFile: extractedImage || undefined,
+      message: "YouTube audio downloaded successfully",
+    };
+  }
+
+  private static async handleExistingVideo(
+    videoId: string,
+    videoTitle: string,
+    playlistId?: string
+  ): Promise<AudioModel.youtubeResponse | null> {
+    const existing = await AudioRepository.findByYoutubeId(videoId);
+    if (!existing) {
+      return null;
+    }
+
+    logger.info(`Video ${videoId} already exists, skipping download`, {
+      context: "YOUTUBE",
+    });
+
+    if (playlistId) {
+      const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
+        playlistId,
+        existing.id
+      );
+
+      if (!existingItem) {
+        const maxPosition = await PlaylistRepository.getMaxPosition(playlistId);
+        await PlaylistRepository.addItem({
+          id: crypto.randomUUID(),
+          playlistId: playlistId,
+          audioId: existing.id,
+          position: maxPosition + 1,
+          addedAt: new Date(),
+        });
+      }
+    }
+
+    return {
+      success: true,
+      id: existing.id,
+      filename: existing.filename,
+      title: existing.title || videoTitle,
+      imageFile: existing.imageFile || undefined,
+      message: "Video already exists in database",
+    };
+  }
+
   static async extractMetadata(
     filePath: string
   ): Promise<AudioModel.audioMetadata | null> {
@@ -257,7 +394,32 @@ export abstract class AudioService {
     } catch (error) {
       throw status(
         500,
-        "yt-dlp is not installed. Please install it from https://github.com/yt-dlp/yt-dlp"
+        "yt-dlp is not installed. Please install it to proceed."
+      );
+    }
+
+    try {
+      const ffmpegProc = Bun.spawn(["ffmpeg", "-version"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const ffmpegExit = await ffmpegProc.exited;
+      if (ffmpegExit !== 0) {
+        throw new Error("ffmpeg is not installed or not accessible");
+      }
+
+      const ffprobeProc = Bun.spawn(["ffprobe", "-version"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const ffprobeExit = await ffprobeProc.exited;
+      if (ffprobeExit !== 0) {
+        throw new Error("ffprobe is not installed or not accessible");
+      }
+    } catch (error) {
+      throw status(
+        500,
+        "ffmpeg and/or ffprobe are not installed. Please install them to proceed."
       );
     }
 
@@ -278,40 +440,13 @@ export abstract class AudioService {
       const videoId = new URL(url).searchParams.get("v");
 
       if (videoId) {
-        const existing = await AudioRepository.findByYoutubeId(videoId);
-        if (existing) {
-          logger.info(`Video ${videoId} already exists, skipping download`, {
-            context: "YOUTUBE",
-          });
-
-          if (playlistId) {
-            const existingItem =
-              await PlaylistRepository.findItemByAudioAndPlaylist(
-                playlistId,
-                existing.id
-              );
-
-            if (!existingItem) {
-              const maxPosition =
-                await PlaylistRepository.getMaxPosition(playlistId);
-              await PlaylistRepository.addItem({
-                id: crypto.randomUUID(),
-                playlistId: playlistId,
-                audioId: existing.id,
-                position: maxPosition + 1,
-                addedAt: new Date(),
-              });
-            }
-          }
-
-          return {
-            success: true,
-            id: existing.id,
-            filename: existing.filename,
-            title: existing.title || existing.filename,
-            imageFile: existing.imageFile || undefined,
-            message: "Video already exists in database",
-          };
+        const existingResult = await this.handleExistingVideo(
+          videoId,
+          url,
+          playlistId
+        );
+        if (existingResult) {
+          return existingResult;
         }
       }
 
@@ -319,43 +454,21 @@ export abstract class AudioService {
       const filename = `${id}.mp3`;
       const filePath = join(UPLOADS_DIR, filename);
 
-      const cookiesPath = "cookies.txt";
-      const hasCookies = existsSync(cookiesPath);
+      const hasCookies = existsSync("cookies.txt");
 
-      logger.info(`Fetching YouTube playlist info: ${url}`, {
-        context: "YOUTUBE",
-      });
+      if (hasCookies) {
+        logger.info(`Using cookies in cookies.txt`);
+      }
+
+      logger.info(`Downloading YouTube audio: ${url}`, { context: "YOUTUBE" });
 
       const ytDlpArgs = [
-        ...(hasCookies ? ["--cookies", cookiesPath] : []),
-        "--user-agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-        "--extractor-args",
-        "youtube:player_client=default,mweb",
-        "-f",
-        "bestaudio",
-        "-x",
-        "--audio-format",
-        "mp3",
-        "--embed-metadata",
-        "--embed-thumbnail",
-        "--parse-metadata",
-        "%(artist,uploader,channel,creator)s:%(meta_artist)s",
-        "--parse-metadata",
-        "%(meta_artist)s:%(album_artist)s",
-        "--parse-metadata",
-        "%(meta_artist)s:%(artist)s",
-        "--replace-in-metadata",
-        "artist",
-        "^([^,&]+).*",
-        "\\1",
+        ...this.getYtDlpBaseArgs(hasCookies),
         "--no-playlist",
         "-o",
         filePath,
         url,
       ];
-
-      logger.info(`Downloading YouTube audio: ${url}`, { context: "YOUTUBE" });
 
       const proc = Bun.spawn(["yt-dlp", ...ytDlpArgs], {
         stdout: "pipe",
@@ -374,17 +487,7 @@ export abstract class AudioService {
           unlinkSync(filePath);
         }
 
-        if (stderr.includes("Private video")) {
-          throw new Error("Video is private or unavailable");
-        } else if (stderr.includes("not available")) {
-          throw new Error("Video not available in your region or was deleted");
-        } else if (stderr.includes("Sign in")) {
-          throw new Error(
-            "Video requires authentication. Add cookies.txt to project root."
-          );
-        } else {
-          throw new Error(`Download failed: ${stderr.substring(0, 200)}`);
-        }
+        this.handleYtDlpError(stderr);
       }
 
       if (!existsSync(filePath)) {
@@ -393,52 +496,18 @@ export abstract class AudioService {
 
       const stats = await stat(filePath);
 
-      const extractedMetadata = await this.extractMetadata(filePath);
-      const extractedImage = await this.extractAlbumArt(filePath, id);
-
-      await AudioRepository.create(
-        AudioRepository.fromMetadata(
-          id,
-          filename,
-          stats.size,
-          extractedMetadata ?? undefined,
-          extractedImage ?? undefined
-        )
-      );
-
-      await PlaylistService.addTrackToAutoPlaylists(
+      const result = await this.processDownloadedVideo(
+        filePath,
         id,
-        extractedMetadata?.artist,
-        extractedMetadata?.album
+        filename,
+        stats.size,
+        videoId || undefined,
+        playlistId
       );
-
-      if (playlistId) {
-        const existingItem =
-          await PlaylistRepository.findItemByAudioAndPlaylist(playlistId, id);
-
-        if (!existingItem) {
-          const maxPosition =
-            await PlaylistRepository.getMaxPosition(playlistId);
-          await PlaylistRepository.addItem({
-            id: crypto.randomUUID(),
-            playlistId: playlistId,
-            audioId: id,
-            position: maxPosition + 1,
-            addedAt: new Date(),
-          });
-        }
-      }
 
       logger.info(`YouTube download completed: ${id}`, { context: "YOUTUBE" });
 
-      return {
-        success: true,
-        id,
-        filename,
-        title: extractedMetadata?.title || filename,
-        imageFile: extractedImage || undefined,
-        message: "YouTube audio downloaded successfully",
-      };
+      return result;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
@@ -450,19 +519,18 @@ export abstract class AudioService {
     url: string
   ): Promise<AudioModel.youtubePlaylistResponse> {
     try {
-      const cookiesPath = "cookies.txt";
-      const hasCookies = existsSync(cookiesPath);
+      const hasCookies = existsSync("cookies.txt");
 
       logger.info(`Fetching YouTube playlist info: ${url}`, {
         context: "YOUTUBE",
       });
 
       if (hasCookies) {
-        logger.info(`Using cookies in ${cookiesPath}`);
+        logger.info(`Using cookies in cookies.txt`);
       }
 
       const infoArgs = [
-        ...(hasCookies ? ["--cookies", cookiesPath] : []),
+        ...(hasCookies ? ["--cookies", "cookies.txt"] : []),
         "--user-agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
         "--dump-json",
@@ -550,26 +618,7 @@ export abstract class AudioService {
       const outputTemplate = join(UPLOADS_DIR, "%(id)s.%(ext)s");
 
       const ytDlpArgs = [
-        ...(hasCookies ? ["--cookies", cookiesPath] : []),
-        "--user-agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-        "-f",
-        "bestaudio",
-        "-x",
-        "--audio-format",
-        "mp3",
-        "--embed-metadata",
-        "--embed-thumbnail",
-        "--parse-metadata",
-        "%(artist,uploader,channel,creator)s:%(meta_artist)s",
-        "--parse-metadata",
-        "%(meta_artist)s:%(album_artist)s",
-        "--parse-metadata",
-        "%(meta_artist)s:%(artist)s",
-        "--replace-in-metadata",
-        "artist",
-        "^([^,&]+).*",
-        "\\1",
+        ...this.getYtDlpBaseArgs(hasCookies),
         "--print-json",
         "-o",
         outputTemplate,
@@ -626,43 +675,21 @@ export abstract class AudioService {
 
         try {
           if (videoId) {
-            const existing = await AudioRepository.findByYoutubeId(videoId);
-            if (existing) {
-              logger.info(
-                `Video ${videoId} already exists, skipping (${index + 1}/${downloadedFiles.length})`,
-                { context: "YOUTUBE" }
-              );
+            const existingResult = await this.handleExistingVideo(
+              videoId,
+              videoTitle,
+              dbPlaylistId
+            );
 
+            if (existingResult) {
               if (existsSync(originalFilePath)) {
                 try {
                   unlinkSync(originalFilePath);
                 } catch (e) {}
               }
 
-              const existingItem =
-                await PlaylistRepository.findItemByAudioAndPlaylist(
-                  dbPlaylistId,
-                  existing.id
-                );
-
-              if (!existingItem) {
-                const maxPosition =
-                  await PlaylistRepository.getMaxPosition(dbPlaylistId);
-                await PlaylistRepository.addItem({
-                  id: crypto.randomUUID(),
-                  playlistId: dbPlaylistId,
-                  audioId: existing.id,
-                  position: maxPosition + 1,
-                  addedAt: new Date(),
-                });
-              }
-
               results.push({
-                success: true,
-                id: existing.id,
-                filename: existing.filename,
-                title: existing.title || videoTitle,
-                imageFile: existing.imageFile || undefined,
+                ...existingResult,
                 message: "Already exists in database",
               });
 
@@ -682,43 +709,14 @@ export abstract class AudioService {
 
           const stats = await stat(newFilePath);
 
-          const extractedMetadata = await this.extractMetadata(newFilePath);
-          const extractedImage = await this.extractAlbumArt(newFilePath, id);
-
-          await AudioRepository.create(
-            AudioRepository.fromMetadata(
-              id,
-              filename,
-              stats.size,
-              extractedMetadata ?? undefined,
-              extractedImage ?? undefined,
-              videoId
-            )
-          );
-
-          await PlaylistService.addTrackToAutoPlaylists(
+          const result = await this.processDownloadedVideo(
+            newFilePath,
             id,
-            extractedMetadata?.artist,
-            extractedMetadata?.album
+            filename,
+            stats.size,
+            videoId,
+            dbPlaylistId
           );
-
-          const existingItem =
-            await PlaylistRepository.findItemByAudioAndPlaylist(
-              dbPlaylistId,
-              id
-            );
-
-          if (!existingItem) {
-            const maxPosition =
-              await PlaylistRepository.getMaxPosition(dbPlaylistId);
-            await PlaylistRepository.addItem({
-              id: crypto.randomUUID(),
-              playlistId: dbPlaylistId,
-              audioId: id,
-              position: maxPosition + 1,
-              addedAt: new Date(),
-            });
-          }
 
           logger.info(
             `Processed video ${index + 1}/${downloadedFiles.length}: ${videoTitle}`,
@@ -726,11 +724,7 @@ export abstract class AudioService {
           );
 
           results.push({
-            success: true,
-            id,
-            filename,
-            title: extractedMetadata?.title || videoTitle,
-            imageFile: extractedImage || undefined,
+            ...result,
             message: "Downloaded successfully",
           });
         } catch (error: any) {
