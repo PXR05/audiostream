@@ -1,4 +1,4 @@
-FROM oven/bun:alpine AS build
+FROM oven/bun:slim AS build
 
 WORKDIR /app
 
@@ -19,11 +19,13 @@ RUN bun build \
     --outfile server.js \
     src/index.ts
 
-FROM oven/bun:alpine AS production
+FROM oven/bun:slim AS production
 
 WORKDIR /usr/src/app
 
-RUN apk -U add yt-dlp
+RUN apt-get update && apt-get install -y python3 && apt-get install -y curl
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/bin/yt-dlp
+RUN chmod a+rx /usr/bin/yt-dlp
 
 COPY --from=build /app/server.js ./server.js
 COPY --from=build /app/src/db/migrations ./src/db/migrations

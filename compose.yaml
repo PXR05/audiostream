@@ -11,3 +11,7 @@ services:
       - ./audiostream.db:/usr/src/app/audiostream.db:rw
       - ./cookies.txt:/usr/src/app/cookies.txt:rw
     restart: unless-stopped
+  yt_updater:
+      build: ghcr.io/pxr05/audiostream:latest
+      entrypoint: ["sh", "-c", "while true; do yt-dlp -U; sleep 86400; done"]
+      restart: unless-stopped

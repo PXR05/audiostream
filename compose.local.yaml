@@ -10,3 +10,7 @@ services:
       - ./uploads:/usr/src/app/uploads:rw
       - ./audiostream.db:/usr/src/app/audiostream.db:rw
     restart: unless-stopped
+  yt_updater:
+    build: .
+    entrypoint: ["sh", "-c", "while true; do yt-dlp -U; sleep 86400; done"]
+    restart: unless-stopped
