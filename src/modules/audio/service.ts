@@ -454,7 +454,12 @@ export abstract class AudioService {
       const filename = `${id}.mp3`;
       const filePath = join(UPLOADS_DIR, filename);
 
-      const hasCookies = existsSync("cookies.txt");
+      let hasCookies = false;
+      try {
+        hasCookies = existsSync("cookies.txt");
+      } catch (error) {
+        logger.error("Error checking for cookies.txt", error);
+      }
 
       if (hasCookies) {
         logger.info(`Using cookies in cookies.txt`);
@@ -519,15 +524,20 @@ export abstract class AudioService {
     url: string
   ): Promise<AudioModel.youtubePlaylistResponse> {
     try {
-      const hasCookies = existsSync("cookies.txt");
-
-      logger.info(`Fetching YouTube playlist info: ${url}`, {
-        context: "YOUTUBE",
-      });
+      let hasCookies = false;
+      try {
+        hasCookies = existsSync("cookies.txt");
+      } catch (error) {
+        logger.error("Error checking for cookies.txt", error);
+      }
 
       if (hasCookies) {
         logger.info(`Using cookies in cookies.txt`);
       }
+
+      logger.info(`Fetching YouTube playlist info: ${url}`, {
+        context: "YOUTUBE",
+      });
 
       const infoArgs = [
         ...(hasCookies ? ["--cookies", "cookies.txt"] : []),
