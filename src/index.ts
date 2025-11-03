@@ -6,6 +6,7 @@ import convertAllImagesToWebP from "./scripts/convert-to-webp";
 import migrate from "./scripts/migrate";
 import { UPLOADS_DIR } from "./utils/helpers";
 import { logger } from "./utils/logger";
+import { AuthService } from "./modules/auth/service";
 
 if (cluster.isPrimary) {
   try {
@@ -36,6 +37,8 @@ if (cluster.isPrimary) {
       context: "STARTUP",
     });
   }
+  
+  await AuthService.seedAdminUser();
   
   for (let i = 0; i < os.availableParallelism(); i++) cluster.fork();
 } else {

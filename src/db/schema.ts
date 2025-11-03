@@ -41,27 +41,26 @@ export const audioFiles = sqliteTable(
 export type AudioFile = typeof audioFiles.$inferSelect;
 export type NewAudioFile = typeof audioFiles.$inferInsert;
 
-export const tokens = sqliteTable(
-  "tokens",
+export const users = sqliteTable(
+  "users",
   {
     id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    userId: text("user_id").notNull(),
-    tokenId: text("token_id").notNull().unique(),
-    hash: text("hash").notNull(),
+    username: text("username").notNull().unique(),
+    passwordHash: text("password_hash").notNull(),
+    role: text("role").notNull().default("user"), // 'admin' or 'user'
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
-    lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+    lastLoginAt: integer("last_login_at", { mode: "timestamp" }),
   },
   (table) => ({
-    createdAtIdx: index("token_created_at_idx").on(table.createdAt),
-    userIdIdx: index("token_user_id_idx").on(table.userId),
+    usernameIdx: index("user_username_idx").on(table.username),
+    createdAtIdx: index("user_created_at_idx").on(table.createdAt),
   }),
 );
 
-export type Token = typeof tokens.$inferSelect;
-export type NewToken = typeof tokens.$inferInsert;
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
 
 export const playlists = sqliteTable(
   "playlists",

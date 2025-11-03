@@ -3,9 +3,9 @@ import {
   audioFiles,
   type NewAudioFile,
   type AudioFile,
-  tokens,
-  type NewToken,
-  type Token,
+  users,
+  type NewUser,
+  type User,
   playlists,
   type NewPlaylist,
   type Playlist,
@@ -316,55 +316,51 @@ export abstract class AudioRepository {
   }
 }
 
-export abstract class TokenRepository {
-  static async create(data: NewToken): Promise<Token> {
-    const result = await db.insert(tokens).values(data).returning();
+export abstract class UserRepository {
+  static async create(data: NewUser): Promise<User> {
+    const result = await db.insert(users).values(data).returning();
     return result[0];
   }
 
-  static async findAll(): Promise<Token[]> {
-    return await db.select().from(tokens).orderBy(desc(tokens.createdAt));
+  static async findAll(): Promise<User[]> {
+    return await db.select().from(users).orderBy(desc(users.createdAt));
   }
 
-  static async findByUserId(userId: string): Promise<Token[]> {
-    return await db
-      .select()
-      .from(tokens)
-      .where(eq(tokens.userId, userId))
-      .orderBy(desc(tokens.createdAt));
-  }
-
-  static async findById(id: string): Promise<Token | null> {
-    const result = await db.select().from(tokens).where(eq(tokens.id, id));
+  static async findById(id: string): Promise<User | null> {
+    const result = await db.select().from(users).where(eq(users.id, id));
     return result[0] ?? null;
   }
 
-  static async findByTokenId(tokenId: string): Promise<Token | null> {
+  static async findByUsername(username: string): Promise<User | null> {
     const result = await db
       .select()
-      .from(tokens)
-      .where(eq(tokens.tokenId, tokenId));
+      .from(users)
+      .where(eq(users.username, username));
     return result[0] ?? null;
   }
 
-  static async updateLastUsed(id: string): Promise<void> {
+  static async update(
+    id: string,
+    data: Partial<NewUser>,
+  ): Promise<User | null> {
+    const result = await db
+      .update(users)
+      .set(data)
+      .where(eq(users.id, id))
+      .returning();
+    return result[0] ?? null;
+  }
+
+  static async updateLastLogin(id: string): Promise<void> {
     await db
-      .update(tokens)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(tokens.id, id));
+      .update(users)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(users.id, id));
   }
 
   static async delete(id: string): Promise<boolean> {
-    const result = await db.delete(tokens).where(eq(tokens.id, id)).returning();
+    const result = await db.delete(users).where(eq(users.id, id)).returning();
     return result.length > 0;
-  }
-
-  static async deleteByUserId(userId: string): Promise<number> {
-    const result = await db
-      .delete(tokens)
-      .where(eq(tokens.userId, userId))
-      .returning();
-    return result.length;
   }
 }
 

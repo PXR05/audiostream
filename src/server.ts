@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { audioController } from "./modules/audio";
-import { tokenController } from "./modules/token";
+import { authController } from "./modules/auth";
 import { playlistController } from "./modules/playlist";
 import { logger } from "./utils/logger";
 import openapi from "@elysiajs/openapi";
@@ -13,7 +13,7 @@ const app = new Elysia()
   .use(cors())
   .use(openapi())
   .get("/", () => ({ message: ":)" }))
-  .use(tokenController)
+  .use(authController)
   .use(audioController)
   .use(playlistController)
   .onError(({ request, code, error, set }) => {
@@ -45,7 +45,7 @@ logger.info(
   `Server running at http://${app.server?.hostname}:${app.server?.port}`,
   {
     context: "SERVER",
-  }
+  },
 );
 logger.info(`Environment: ${process.env.NODE_ENV || "development"}`, {
   context: "SERVER",

@@ -9,9 +9,12 @@ services:
     volumes:
       - ./uploads:/usr/src/app/uploads:rw
       - ./audiostream.db:/usr/src/app/audiostream.db:rw
-      - ./cookies.txt:/usr/src/app/cookies.txt:rw
+      # - ./cookies.txt:/usr/src/app/cookies.txt:rw # only uncomment if you have cookies.txt file in the same directory
     restart: unless-stopped
-  yt_updater:
-      build: ghcr.io/pxr05/audiostream:latest
-      entrypoint: ["sh", "-c", "while true; do yt-dlp -U; sleep 86400; done"]
-      restart: unless-stopped
+  # bgutil-provider:
+  #   image: brainicism/bgutil-ytdlp-pot-provider
+  #   container_name: bgutil-provider
+  #   ports:
+  #     - "4416:4416"
+  #   init: true
+  #   restart: unless-stopped
