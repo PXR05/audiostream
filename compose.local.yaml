@@ -5,7 +5,9 @@ services:
       - "${PORT:-3000}:${PORT:-3000}"
     environment:
       PORT: ${PORT:-3000}
-      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     volumes:
       - ./uploads:/usr/src/app/uploads:rw
       - ./audiostream.db:/usr/src/app/audiostream.db:rw
