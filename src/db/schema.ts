@@ -29,13 +29,14 @@ export const audioFiles = sqliteTable(
     channels: integer("channels"),
     format: text("format"),
     extra: text("extra"),
+    isPublic: integer("is_public").default(0),
   },
   (table) => ({
     titleIdx: index("title_idx").on(table.title),
     artistIdx: index("artist_idx").on(table.artist),
     albumIdx: index("album_idx").on(table.album),
     uploadedAtIdx: index("uploaded_at_idx").on(table.uploadedAt),
-  }),
+  })
 );
 
 export type AudioFile = typeof audioFiles.$inferSelect;
@@ -56,11 +57,33 @@ export const users = sqliteTable(
   (table) => ({
     usernameIdx: index("user_username_idx").on(table.username),
     createdAtIdx: index("user_created_at_idx").on(table.createdAt),
-  }),
+  })
 );
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+
+export const audioFileUsers = sqliteTable(
+  "audio_file_users",
+  {
+    id: text("id").primaryKey(),
+    audioFileId: text("audio_file_id")
+      .notNull()
+      .references(() => audioFiles.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (table) => ({
+    audioFileIdIdx: index("audio_file_users_audio_file_id_idx").on(
+      table.audioFileId
+    ),
+    userIdIdx: index("audio_file_users_user_id_idx").on(table.userId),
+  })
+);
+
+export type AudioFileUser = typeof audioFileUsers.$inferSelect;
+export type NewAudioFileUser = typeof audioFileUsers.$inferInsert;
 
 export const playlists = sqliteTable(
   "playlists",
@@ -79,7 +102,7 @@ export const playlists = sqliteTable(
   (table) => ({
     userIdIdx: index("playlist_user_id_idx").on(table.userId),
     createdAtIdx: index("playlist_created_at_idx").on(table.createdAt),
-  }),
+  })
 );
 
 export type Playlist = typeof playlists.$inferSelect;
@@ -105,9 +128,9 @@ export const playlistItems = sqliteTable(
     audioIdIdx: index("playlist_items_audio_id_idx").on(table.audioId),
     playlistPositionIdx: index("playlist_items_playlist_position_idx").on(
       table.playlistId,
-      table.position,
+      table.position
     ),
-  }),
+  })
 );
 
 export type PlaylistItem = typeof playlistItems.$inferSelect;

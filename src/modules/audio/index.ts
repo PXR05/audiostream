@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { AudioService } from "./service";
 import { AudioModel } from "./model";
-import { authPlugin } from "../../utils/auth";
+import { authPlugin, type AuthData } from "../../utils/auth";
 
 export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
   .use(authPlugin)
@@ -18,12 +18,20 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
 
   .get(
     "/",
-    async ({ query }) => {
+    async ({ query, store }) => {
+      const storeWithAuth = store as typeof store & { auth?: AuthData };
+      if (!storeWithAuth.auth) {
+        throw new Error("Authentication required");
+      }
+
+      const userId = storeWithAuth.auth.userId;
+
       return await AudioService.getAudioFiles({
         page: query.page,
         limit: query.limit,
         sortBy: query.sortBy,
         sortOrder: query.sortOrder,
+        userId,
       });
     },
     {
@@ -32,15 +40,23 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.audioListResponse,
       },
-    },
+    }
   )
 
   .get(
     "/search",
-    async ({ query }) => {
+    async ({ query, store }) => {
+      const storeWithAuth = store as typeof store & { auth?: AuthData };
+      if (!storeWithAuth.auth) {
+        throw new Error("Authentication required");
+      }
+
+      const userId = storeWithAuth.auth.userId;
+
       return await AudioService.search(query.q, {
         page: query.page,
         limit: query.limit,
+        userId,
       });
     },
     {
@@ -49,7 +65,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.audioListResponse,
       },
-    },
+    }
   )
 
   .get(
@@ -63,17 +79,25 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.searchSuggestionsResponse,
       },
-    },
+    }
   )
 
   .get(
     "/random",
-    async ({ query }) => {
+    async ({ query, store }) => {
+      const storeWithAuth = store as typeof store & { auth?: AuthData };
+      if (!storeWithAuth.auth) {
+        throw new Error("Authentication required");
+      }
+
+      const userId = storeWithAuth.auth.userId;
+
       return await AudioService.getRandomAudioFiles({
         page: query.page,
         limit: query.limit,
         seed: query.seed,
         firstTrackId: query.firstTrackId,
+        userId,
       });
     },
     {
@@ -82,22 +106,29 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.audioListResponse,
       },
-    },
+    }
   )
 
   .post(
     "/upload",
-    async ({ body }) => {
+    async ({ body, store }) => {
+      const storeWithAuth = store as typeof store & { auth?: AuthData };
+      if (!storeWithAuth.auth) {
+        throw new Error("Authentication required");
+      }
+
+      const userId = storeWithAuth.auth.userId;
+
       if (body.file) {
-        return await AudioService.uploadFile(body.file);
+        return await AudioService.uploadFile(body.file, userId);
       } else if (body.files) {
         if (Array.isArray(body.files)) {
           if (body.files.length === 0) {
             throw new Error("No files provided");
           }
-          return await AudioService.uploadFiles(body.files);
+          return await AudioService.uploadFiles(body.files, userId);
         } else {
-          return await AudioService.uploadFile(body.files as File);
+          return await AudioService.uploadFile(body.files as File, userId);
         }
       } else {
         throw new Error("No file or files provided");
@@ -114,17 +145,24 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         400: AudioModel.errorResponse,
         413: AudioModel.errorResponse,
       },
-    },
+    }
   )
 
   .post(
     "/youtube",
-    async ({ body }) => {
-      return await AudioService.downloadYoutube(body.url);
+    async ({ body, store }) => {
+      const storeWithAuth = store as typeof store & { auth?: AuthData };
+      if (!storeWithAuth.auth) {
+        throw new Error("Authentication required");
+      }
+
+      const userId = storeWithAuth.auth.userId;
+
+      return await AudioService.downloadYoutube(body.url, userId);
     },
     {
       body: "audio.youtube",
-      isAdmin: true,
+      isAuth: true,
       response: {
         200: t.Union([
           AudioModel.youtubeResponse,
@@ -133,7 +171,61 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         400: AudioModel.errorResponse,
         500: AudioModel.errorResponse,
       },
+    }
+  )
+
+  .get(
+    "/youtube/progress",
+    async ({ query, store, set }) => {
+      const storeWithAuth = store as typeof store & { auth?: AuthData };
+      if (!storeWithAuth.auth) {
+        throw new Error("Authentication required");
+      }
+
+      if (!query.url) {
+        throw new Error("URL parameter is required");
+      }
+
+      const userId = storeWithAuth.auth.userId;
+
+      set.headers["Content-Type"] = "text/event-stream";
+      set.headers["Cache-Control"] = "no-cache";
+      set.headers["Connection"] = "keep-alive";
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+
+          const sendEvent = (data: AudioModel.youtubeProgressEvent) => {
+            const message = `data: ${JSON.stringify(data)}\n\n`;
+            controller.enqueue(encoder.encode(message));
+          };
+
+          try {
+            await AudioService.downloadYoutubeWithProgress(
+              query.url,
+              userId,
+              sendEvent
+            );
+            controller.close();
+          } catch (error: any) {
+            sendEvent({
+              type: "error",
+              message: error.message || "Download failed",
+            });
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(stream);
     },
+    {
+      isAuth: true,
+      query: t.Object({
+        url: t.String({ format: "uri" }),
+      }),
+    }
   )
 
   .guard({
@@ -142,8 +234,15 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
 
   .get(
     "/:id",
-    async ({ params: { id } }) => {
-      const file = await AudioService.getAudioById(id);
+    async ({ params: { id }, store }) => {
+      const storeWithAuth = store as typeof store & { auth?: AuthData };
+      if (!storeWithAuth.auth) {
+        throw new Error("Authentication required");
+      }
+
+      const userId = storeWithAuth.auth.userId;
+
+      const file = await AudioService.getAudioById(id, userId);
       return { file };
     },
     {
@@ -152,13 +251,20 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         200: AudioModel.audioDetailResponse,
         404: AudioModel.errorResponse,
       },
-    },
+    }
   )
 
   .delete(
     "/:id",
-    async ({ params: { id } }) => {
-      return await AudioService.deleteAudio(id);
+    async ({ params: { id }, store }) => {
+      const storeWithAuth = store as typeof store & { auth?: AuthData };
+      if (!storeWithAuth.auth) {
+        throw new Error("Authentication required");
+      }
+
+      const userId = storeWithAuth.auth.userId;
+
+      return await AudioService.deleteAudio(id, userId);
     },
     {
       isAdmin: true,
@@ -168,13 +274,20 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         404: AudioModel.errorResponse,
         500: AudioModel.errorResponse,
       },
-    },
+    }
   )
 
   .get(
     "/:id/stream",
-    async ({ params: { id }, set, request }) => {
-      const { file, filePath } = await AudioService.getAudioStream(id);
+    async ({ params: { id }, set, request, store }) => {
+      const storeWithAuth = store as typeof store & { auth?: AuthData };
+      if (!storeWithAuth.auth) {
+        throw new Error("Authentication required");
+      }
+
+      const userId = storeWithAuth.auth.userId;
+
+      const { file, filePath } = await AudioService.getAudioStream(id, userId);
 
       const bunFile = Bun.file(filePath);
       const fileSize = bunFile.size;
@@ -214,13 +327,20 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         404: AudioModel.errorResponse,
       },
-    },
+    }
   )
 
   .get(
     "/:id/image",
-    async ({ params: { id }, set }) => {
-      const { file, imagePath } = await AudioService.getImageStream(id);
+    async ({ params: { id }, set, store }) => {
+      const storeWithAuth = store as typeof store & { auth?: AuthData };
+      if (!storeWithAuth.auth) {
+        throw new Error("Authentication required");
+      }
+
+      const userId = storeWithAuth.auth.userId;
+
+      const { file, imagePath } = await AudioService.getImageStream(id, userId);
 
       const ext = imagePath.split(".").pop()?.toLowerCase();
       const mimeType =
@@ -243,5 +363,5 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         404: AudioModel.errorResponse,
       },
-    },
+    }
   );

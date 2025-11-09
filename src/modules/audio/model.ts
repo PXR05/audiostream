@@ -28,11 +28,11 @@ export namespace AudioModel {
           t.Literal("uploadedAt"),
           t.Literal("title"),
         ],
-        { default: "uploadedAt" },
-      ),
+        { default: "uploadedAt" }
+      )
     ),
     sortOrder: t.Optional(
-      t.Union([t.Literal("asc"), t.Literal("desc")], { default: "desc" }),
+      t.Union([t.Literal("asc"), t.Literal("desc")], { default: "desc" })
     ),
   });
   export type paginationQuery = typeof paginationQuery.static;
@@ -79,6 +79,7 @@ export namespace AudioModel {
     uploadedAt: t.Date(),
     metadata: t.Optional(audioMetadata),
     imageFile: t.Optional(t.String()),
+    youtubeId: t.Optional(t.String()),
   });
   export type audioFile = typeof audioFile.static;
 
@@ -101,7 +102,7 @@ export namespace AudioModel {
           filename: t.String(),
           error: t.String(),
         }),
-      ]),
+      ])
     ),
     totalFiles: t.Number(),
     successfulUploads: t.Number(),
@@ -133,7 +134,7 @@ export namespace AudioModel {
           title: t.String(),
           error: t.String(),
         }),
-      ]),
+      ])
     ),
     totalVideos: t.Number(),
     successfulDownloads: t.Number(),
@@ -186,4 +187,25 @@ export namespace AudioModel {
   });
   export type searchSuggestionsResponse =
     typeof searchSuggestionsResponse.static;
+
+  export const youtubeProgressEvent = t.Object({
+    type: t.Union([
+      t.Literal("progress"),
+      t.Literal("complete"),
+      t.Literal("error"),
+      t.Literal("info"),
+    ]),
+    message: t.String(),
+    data: t.Optional(
+      t.Object({
+        percent: t.Optional(t.Number()),
+        speed: t.Optional(t.String()),
+        eta: t.Optional(t.String()),
+        downloaded: t.Optional(t.String()),
+        totalSize: t.Optional(t.String()),
+      })
+    ),
+    result: t.Optional(t.Union([youtubeResponse, youtubePlaylistResponse])),
+  });
+  export type youtubeProgressEvent = typeof youtubeProgressEvent.static;
 }
