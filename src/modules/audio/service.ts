@@ -642,11 +642,39 @@ export abstract class AudioService {
         stderr: "pipe",
       });
 
+      let stdoutText = "";
+      const stdoutReader = proc.stdout.getReader();
+      const stdoutDecoder = new TextDecoder();
+
+      const readStdout = async () => {
+        while (true) {
+          const { done, value } = await stdoutReader.read();
+          if (done) break;
+          const chunk = stdoutDecoder.decode(value, { stream: true });
+          stdoutText += chunk;
+          process.stdout.write(chunk);
+        }
+      };
+
+      let stderrText = "";
+      const stderrReader = proc.stderr.getReader();
+      const stderrDecoder = new TextDecoder();
+
+      const readStderr = async () => {
+        while (true) {
+          const { done, value } = await stderrReader.read();
+          if (done) break;
+          const chunk = stderrDecoder.decode(value, { stream: true });
+          stderrText += chunk;
+          process.stderr.write(chunk);
+        }
+      };
+
+      await Promise.all([readStdout(), readStderr()]);
       const exitCode = await proc.exited;
 
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
-        logger.error("yt-dlp failed", new Error(stderr), {
+        logger.error("yt-dlp failed", new Error(stderrText), {
           context: "YOUTUBE",
         });
 
@@ -654,7 +682,7 @@ export abstract class AudioService {
           unlinkSync(filePath);
         }
 
-        this.handleYtDlpError(stderr);
+        this.handleYtDlpError(stderrText);
       }
 
       if (!existsSync(filePath)) {
@@ -789,159 +817,45 @@ export abstract class AudioService {
         }
       }
 
-      const outputTemplate = join(UPLOADS_DIR, "%(id)s.%(ext)s");
 
-      const ytDlpArgs = [
-        ...this.getYtDlpBaseArgs(hasCookies),
-        "--print-json",
-        "-o",
-        outputTemplate,
-        url,
-      ];
-
-      logger.info(`Starting playlist download with yt-dlp`, {
-        context: "YOUTUBE",
-      });
-
-      const proc = Bun.spawn(["yt-dlp", ...ytDlpArgs], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      let stdoutText = "";
-      const stdoutReader = proc.stdout.getReader();
-      const stdoutDecoder = new TextDecoder();
-
-      const readStdout = async () => {
-        while (true) {
-          const { done, value } = await stdoutReader.read();
-          if (done) break;
-          const chunk = stdoutDecoder.decode(value, { stream: true });
-          stdoutText += chunk;
-          process.stdout.write(chunk);
-        }
-      };
-
-      let stderrText = "";
-      const stderrReader = proc.stderr.getReader();
-      const stderrDecoder = new TextDecoder();
-
-      const readStderr = async () => {
-        while (true) {
-          const { done, value } = await stderrReader.read();
-          if (done) break;
-          const chunk = stderrDecoder.decode(value, { stream: true });
-          stderrText += chunk;
-          process.stderr.write(chunk);
-        }
-      };
-
-      await Promise.all([readStdout(), readStderr()]);
-
-      const exitCode = await proc.exited;
-
-      if (exitCode !== 0) {
-        logger.error("yt-dlp playlist download failed", new Error(stderrText), {
-          context: "YOUTUBE",
-        });
-        throw new Error(`Download failed: ${stderrText.substring(0, 200)}`);
-      }
-
-      const downloadedFiles: any[] = [];
-      const jsonLines = stdoutText
-        .trim()
-        .split("\n")
-        .filter((line) => line.trim());
-
-      for (const line of jsonLines) {
-        try {
-          const info = JSON.parse(line);
-          if (info.filepath || info._filename) {
-            downloadedFiles.push(info);
-          }
-        } catch (e) {}
-      }
-
-      logger.info(`Processing ${downloadedFiles.length} downloaded files`, {
+      logger.info(`Starting to download ${videos.length} videos one by one`, {
         context: "YOUTUBE",
       });
 
       const results = [];
-      for (let index = 0; index < downloadedFiles.length; index++) {
-        const fileInfo = downloadedFiles[index];
-        const videoId = fileInfo.id || fileInfo.display_id;
-        const videoTitle = fileInfo.title || "Unknown";
-        const originalFilePath = (
-          fileInfo.filepath || fileInfo._filename
-        ).replace(".webm", ".mp3");
+      for (let index = 0; index < videos.length; index++) {
+        const video = videos[index];
+        const videoId = video.id;
+        const videoTitle = video.title || "Unknown";
+        const videoUrl =
+          video.url || `https://www.youtube.com/watch?v=${videoId}`;
+
+        console.log(
+          `\n[${index + 1}/${videos.length}] Downloading: ${videoTitle}`,
+        );
+        logger.info(
+          `Downloading video ${index + 1}/${videos.length}: ${videoTitle}`,
+          { context: "YOUTUBE" },
+        );
 
         try {
-          if (videoId) {
-            const existingResult = await this.handleExistingVideo(
-              videoId,
-              videoTitle,
-              userId,
-              dbPlaylistId,
-            );
-
-            if (existingResult) {
-              if (existsSync(originalFilePath)) {
-                try {
-                  unlinkSync(originalFilePath);
-                } catch (e) {}
-              }
-
-              results.push({
-                ...existingResult,
-                message: "Already exists in database",
-              });
-
-              continue;
-            }
-          }
-
-          if (!existsSync(originalFilePath)) {
-            throw new Error(`Downloaded file not found: ${originalFilePath}`);
-          }
-
-          const id = generateId() + "_" + videoId;
-          const filename = `${id}.mp3`;
-          const newFilePath = join(UPLOADS_DIR, filename);
-
-          await rename(originalFilePath, newFilePath);
-
-          const stats = await stat(newFilePath);
-
-          const result = await this.processDownloadedVideo(
-            newFilePath,
-            id,
-            filename,
-            stats.size,
+          const result = await this.downloadYoutubeSingle(
+            videoUrl,
             userId,
-            videoId,
             dbPlaylistId,
           );
 
-          logger.info(
-            `Processed video ${index + 1}/${downloadedFiles.length}: ${videoTitle}`,
-            { context: "YOUTUBE" },
-          );
-
+          console.log(`✓ Successfully added to database`);
           results.push({
             ...result,
-            message: "Downloaded successfully",
+            message: result.message || "Downloaded successfully",
           });
         } catch (error: any) {
           const errorMessage = error.message || "Unknown error occurred";
-          logger.error(`Failed to process video: ${videoTitle}`, error, {
+          console.log(`✗ Failed: ${errorMessage}`);
+          logger.error(`Failed to download video: ${videoTitle}`, error, {
             context: "YOUTUBE",
           });
-
-          if (originalFilePath && existsSync(originalFilePath)) {
-            try {
-              unlinkSync(originalFilePath);
-            } catch (e) {}
-          }
 
           results.push({
             success: false as const,
@@ -949,7 +863,19 @@ export abstract class AudioService {
             error: errorMessage,
           });
         }
+
+        if (index < videos.length - 1) {
+          const delaySeconds = 2;
+          console.log(
+            `Waiting ${delaySeconds} seconds before next download...`,
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, delaySeconds * 1000),
+          );
+        }
       }
+
+      console.log(`\nPlaylist download complete!`);
 
       const successfulDownloads = results.filter((r) => r.success).length;
       const failedDownloads = results.filter((r) => !r.success).length;
