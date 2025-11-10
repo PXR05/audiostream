@@ -148,34 +148,8 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
     }
   )
 
-  .post(
-    "/youtube",
-    async ({ body, store }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        throw new Error("Authentication required");
-      }
-
-      const userId = storeWithAuth.auth.userId;
-
-      return await AudioService.downloadYoutube(body.url, userId);
-    },
-    {
-      body: "audio.youtube",
-      isAuth: true,
-      response: {
-        200: t.Union([
-          AudioModel.youtubeResponse,
-          AudioModel.youtubePlaylistResponse,
-        ]),
-        400: AudioModel.errorResponse,
-        500: AudioModel.errorResponse,
-      },
-    }
-  )
-
   .get(
-    "/youtube/progress",
+    "/youtube",
     async ({ query, store, set }) => {
       const storeWithAuth = store as typeof store & { auth?: AuthData };
       if (!storeWithAuth.auth) {
@@ -195,26 +169,40 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       const stream = new ReadableStream({
         async start(controller) {
           const encoder = new TextEncoder();
+          let isClosed = false;
 
           const sendEvent = (data: AudioModel.youtubeProgressEvent) => {
-            const message = `data: ${JSON.stringify(data)}\n\n`;
-            controller.enqueue(encoder.encode(message));
+            if (isClosed) return;
+
+            try {
+              const message = `data: ${JSON.stringify(data)}\n\n`;
+              controller.enqueue(encoder.encode(message));
+            } catch (error) {
+              isClosed = true;
+            }
           };
 
           try {
-            await AudioService.downloadYoutubeWithProgress(
-              query.url,
-              userId,
-              sendEvent
-            );
-            controller.close();
+            await AudioService.downloadYoutube(query.url, userId, sendEvent);
+            if (!isClosed) {
+              controller.close();
+              isClosed = true;
+            }
           } catch (error: any) {
-            sendEvent({
-              type: "error",
-              message: error.message || "Download failed",
-            });
-            controller.close();
+            if (!isClosed) {
+              sendEvent({
+                type: "error",
+                message: error.message || "Download failed",
+              });
+              controller.close();
+              isClosed = true;
+            }
           }
+        },
+        cancel() {
+          console.log(
+            "SSE connection closed by client, download will continue in background"
+          );
         },
       });
 

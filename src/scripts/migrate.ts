@@ -1,4 +1,4 @@
-import { AudioRepository } from "../db/repository";
+import { AudioRepository } from "../db/repositories";
 import { readdir, stat } from "fs/promises";
 import { join, extname } from "path";
 import { existsSync, statSync } from "fs";

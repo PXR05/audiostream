@@ -9,7 +9,7 @@ import {
   AudioRepository,
   PlaylistRepository,
   AudioFileUserRepository,
-} from "../../db/repository";
+} from "../../db/repositories";
 import {
   generateId,
   UPLOADS_DIR,
@@ -65,10 +65,10 @@ function shuffleWithSeed<T>(array: T[], seed: string): T[] {
 
 export abstract class AudioService {
   private static parseYtDlpProgress(
-    line: string,
+    line: string
   ): AudioModel.youtubeProgressEvent["data"] | null {
     const downloadMatch = line.match(
-      /\[download\]\s+(\d+\.?\d*)%\s+of\s+~?(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)/,
+      /\[download\]\s+(\d+\.?\d*)%\s+of\s+~?(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)/
     );
     if (downloadMatch) {
       return {
@@ -121,7 +121,7 @@ export abstract class AudioService {
       throw new Error("Video not available in your region or was deleted");
     } else if (stderr.includes("Sign in")) {
       throw new Error(
-        "Video requires authentication. Add cookies.txt to project root.",
+        "Video requires authentication. Add cookies.txt to project root."
       );
     } else {
       throw new Error(`Download failed: ${stderr.substring(0, 200)}`);
@@ -129,7 +129,7 @@ export abstract class AudioService {
   }
 
   private static async cropAndReembedThumbnail(
-    filePath: string,
+    filePath: string
   ): Promise<void> {
     try {
       const tempImagePath = join(UPLOADS_DIR, `temp_thumb_${Date.now()}.jpg`);
@@ -137,7 +137,7 @@ export abstract class AudioService {
 
       const extractProc = Bun.spawn(
         ["ffmpeg", "-i", filePath, "-an", "-vcodec", "copy", tempImagePath],
-        { stdout: "pipe", stderr: "pipe" },
+        { stdout: "pipe", stderr: "pipe" }
       );
       await extractProc.exited;
 
@@ -157,7 +157,7 @@ export abstract class AudioService {
 
       const croppedImagePath = join(
         UPLOADS_DIR,
-        `cropped_thumb_${Date.now()}.jpg`,
+        `cropped_thumb_${Date.now()}.jpg`
       );
       await image
         .crop(x, y, size, size)
@@ -186,7 +186,7 @@ export abstract class AudioService {
           "-y",
           tempAudioPath,
         ],
-        { stdout: "pipe", stderr: "pipe" },
+        { stdout: "pipe", stderr: "pipe" }
       );
       const embedExit = await embedProc.exited;
 
@@ -214,7 +214,7 @@ export abstract class AudioService {
     fileSize: number,
     userId?: string,
     videoId?: string,
-    playlistId?: string,
+    playlistId?: string
   ): Promise<AudioModel.youtubeResponse> {
     await this.cropAndReembedThumbnail(filePath);
 
@@ -228,8 +228,8 @@ export abstract class AudioService {
         fileSize,
         extractedMetadata ?? undefined,
         extractedImage ?? undefined,
-        videoId,
-      ),
+        videoId
+      )
     );
 
     if (userId) {
@@ -243,13 +243,13 @@ export abstract class AudioService {
     await PlaylistService.addTrackToAutoPlaylists(
       id,
       extractedMetadata?.artist,
-      extractedMetadata?.album,
+      extractedMetadata?.album
     );
 
     if (playlistId) {
       const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
         playlistId,
-        id,
+        id
       );
 
       if (!existingItem) {
@@ -274,75 +274,8 @@ export abstract class AudioService {
     };
   }
 
-  private static async handleExistingVideo(
-    videoId: string,
-    videoTitle: string,
-    userId?: string,
-    playlistId?: string,
-  ): Promise<AudioModel.youtubeResponse | null> {
-    const existing = await AudioRepository.findByYoutubeId(videoId);
-    if (!existing) {
-      return null;
-    }
-
-    if (userId) {
-      const userMapping = await AudioFileUserRepository.findByAudioAndUser(
-        existing.id,
-        userId,
-      );
-
-      if (!userMapping) {
-        logger.info(
-          `Video ${videoId} exists but not in user's library, adding mapping`,
-          { context: "YOUTUBE" },
-        );
-
-        await AudioFileUserRepository.create({
-          id: crypto.randomUUID(),
-          audioFileId: existing.id,
-          userId,
-        });
-      } else {
-        logger.info(`Video ${videoId} already exists in user's library`, {
-          context: "YOUTUBE",
-        });
-      }
-    } else {
-      logger.info(`Video ${videoId} already exists, skipping download`, {
-        context: "YOUTUBE",
-      });
-    }
-
-    if (playlistId) {
-      const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
-        playlistId,
-        existing.id,
-      );
-
-      if (!existingItem) {
-        const maxPosition = await PlaylistRepository.getMaxPosition(playlistId);
-        await PlaylistRepository.addItem({
-          id: crypto.randomUUID(),
-          playlistId: playlistId,
-          audioId: existing.id,
-          position: maxPosition + 1,
-          addedAt: new Date(),
-        });
-      }
-    }
-
-    return {
-      success: true,
-      id: existing.id,
-      filename: existing.filename,
-      title: existing.title || videoTitle,
-      imageFile: existing.imageFile || undefined,
-      message: "Video already exists in database",
-    };
-  }
-
   static async extractMetadata(
-    filePath: string,
+    filePath: string
   ): Promise<AudioModel.audioMetadata | null> {
     try {
       const metadata = await mm.parseFile(filePath);
@@ -366,7 +299,7 @@ export abstract class AudioService {
 
   static async extractAlbumArt(
     filePath: string,
-    audioId: string,
+    audioId: string
   ): Promise<string | null> {
     try {
       const metadata = await mm.parseFile(filePath);
@@ -429,7 +362,7 @@ export abstract class AudioService {
 
   static async uploadFile(
     file: File,
-    userId?: string,
+    userId?: string
   ): Promise<AudioModel.uploadResponse> {
     if (!file) {
       throw status(400, "No file provided");
@@ -438,7 +371,7 @@ export abstract class AudioService {
     if (file.size > MAX_FILE_SIZE) {
       throw status(
         413,
-        `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
+        `File too large. Maximum size: ${MAX_FILE_SIZE / (1024 * 1024)}MB`
       );
     }
 
@@ -446,7 +379,7 @@ export abstract class AudioService {
     if (!ALLOWED_AUDIO_EXTENSIONS.includes(ext)) {
       throw status(
         400,
-        `Invalid audio format. Allowed: ${ALLOWED_AUDIO_EXTENSIONS.join(", ")}`,
+        `Invalid audio format. Allowed: ${ALLOWED_AUDIO_EXTENSIONS.join(", ")}`
       );
     }
 
@@ -471,8 +404,8 @@ export abstract class AudioService {
         filename,
         file.size,
         extractedMetadata ?? undefined,
-        extractedImage ?? undefined,
-      ),
+        extractedImage ?? undefined
+      )
     );
 
     if (userId) {
@@ -486,7 +419,7 @@ export abstract class AudioService {
     await PlaylistService.addTrackToAutoPlaylists(
       id,
       extractedMetadata?.artist,
-      extractedMetadata?.album,
+      extractedMetadata?.album
     );
 
     return {
@@ -500,7 +433,7 @@ export abstract class AudioService {
 
   static async uploadFiles(
     files: File[],
-    userId?: string,
+    userId?: string
   ): Promise<AudioModel.multiUploadResponse> {
     if (!files || files.length === 0) {
       throw status(400, "No files provided");
@@ -538,407 +471,9 @@ export abstract class AudioService {
     };
   }
 
-  static async downloadYoutube(
-    url: string,
-    userId?: string,
-  ): Promise<AudioModel.youtubeResponse | AudioModel.youtubePlaylistResponse> {
-    try {
-      const checkProc = Bun.spawn(["yt-dlp", "--version"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const checkExit = await checkProc.exited;
-      if (checkExit !== 0) {
-        throw new Error("yt-dlp is not installed or not accessible");
-      }
-    } catch (error) {
-      throw status(
-        500,
-        "yt-dlp is not installed. Please install it to proceed.",
-      );
-    }
-
-    try {
-      const ffmpegProc = Bun.spawn(["ffmpeg", "-version"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const ffmpegExit = await ffmpegProc.exited;
-      if (ffmpegExit !== 0) {
-        throw new Error("ffmpeg is not installed or not accessible");
-      }
-
-      const ffprobeProc = Bun.spawn(["ffprobe", "-version"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const ffprobeExit = await ffprobeProc.exited;
-      if (ffprobeExit !== 0) {
-        throw new Error("ffprobe is not installed or not accessible");
-      }
-    } catch (error) {
-      throw status(
-        500,
-        "ffmpeg and/or ffprobe are not installed. Please install them to proceed.",
-      );
-    }
-
-    const isPlaylist = url.includes("list=") || url.includes("/playlist");
-
-    if (isPlaylist) {
-      return await this.downloadYoutubePlaylist(url, userId);
-    } else {
-      return await this.downloadYoutubeSingle(url, userId);
-    }
-  }
-
-  private static async downloadYoutubeSingle(
-    url: string,
-    userId?: string,
-    playlistId?: string,
-  ): Promise<AudioModel.youtubeResponse> {
-    try {
-      const videoId = new URL(url).searchParams.get("v");
-
-      if (videoId) {
-        const existingResult = await this.handleExistingVideo(
-          videoId,
-          url,
-          userId,
-          playlistId,
-        );
-        if (existingResult) {
-          return existingResult;
-        }
-      }
-
-      const id = generateId() + "_" + (videoId || "yt");
-      const filename = `${id}.mp3`;
-      const filePath = join(UPLOADS_DIR, filename);
-
-      let hasCookies = false;
-      try {
-        hasCookies = existsSync("cookies.txt");
-      } catch (error) {
-        logger.error("Error checking for cookies.txt", error);
-      }
-
-      if (hasCookies) {
-        logger.info(`Using cookies in cookies.txt`);
-      }
-
-      logger.info(`Downloading YouTube audio: ${url}`, { context: "YOUTUBE" });
-
-      const ytDlpArgs = [
-        ...this.getYtDlpBaseArgs(hasCookies),
-        "--no-playlist",
-        "-o",
-        filePath,
-        url,
-      ];
-
-      const proc = Bun.spawn(["yt-dlp", ...ytDlpArgs], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      let stdoutText = "";
-      const stdoutReader = proc.stdout.getReader();
-      const stdoutDecoder = new TextDecoder();
-
-      const readStdout = async () => {
-        while (true) {
-          const { done, value } = await stdoutReader.read();
-          if (done) break;
-          const chunk = stdoutDecoder.decode(value, { stream: true });
-          stdoutText += chunk;
-          process.stdout.write(chunk);
-        }
-      };
-
-      let stderrText = "";
-      const stderrReader = proc.stderr.getReader();
-      const stderrDecoder = new TextDecoder();
-
-      const readStderr = async () => {
-        while (true) {
-          const { done, value } = await stderrReader.read();
-          if (done) break;
-          const chunk = stderrDecoder.decode(value, { stream: true });
-          stderrText += chunk;
-          process.stderr.write(chunk);
-        }
-      };
-
-      await Promise.all([readStdout(), readStderr()]);
-      const exitCode = await proc.exited;
-
-      if (exitCode !== 0) {
-        logger.error("yt-dlp failed", new Error(stderrText), {
-          context: "YOUTUBE",
-        });
-
-        if (existsSync(filePath)) {
-          unlinkSync(filePath);
-        }
-
-        this.handleYtDlpError(stderrText);
-      }
-
-      if (!existsSync(filePath)) {
-        throw new Error("Downloaded file not found");
-      }
-
-      const stats = await stat(filePath);
-
-      const result = await this.processDownloadedVideo(
-        filePath,
-        id,
-        filename,
-        stats.size,
-        userId,
-        videoId || undefined,
-        playlistId,
-      );
-
-      logger.info(`YouTube download completed: ${id}`, { context: "YOUTUBE" });
-
-      return result;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error occurred";
-      throw status(500, `Failed to download YouTube audio: ${errorMessage}`);
-    }
-  }
-
-  private static async downloadYoutubePlaylist(
-    url: string,
-    userId?: string,
-  ): Promise<AudioModel.youtubePlaylistResponse> {
-    try {
-      let hasCookies = false;
-      try {
-        hasCookies = existsSync("cookies.txt");
-      } catch (error) {
-        logger.error("Error checking for cookies.txt", error);
-      }
-
-      if (hasCookies) {
-        logger.info(`Using cookies in cookies.txt`);
-      }
-
-      logger.info(`Fetching YouTube playlist info: ${url}`, {
-        context: "YOUTUBE",
-      });
-
-      const infoArgs = [
-        ...(hasCookies ? ["--cookies", "cookies.txt"] : []),
-        "--user-agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-        "--dump-json",
-        "--flat-playlist",
-        url,
-      ];
-
-      const infoProc = Bun.spawn(["yt-dlp", ...infoArgs], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      const infoExitCode = await infoProc.exited;
-
-      if (infoExitCode !== 0) {
-        const stderr = await new Response(infoProc.stderr).text();
-        throw new Error(
-          `Failed to fetch playlist info: ${stderr.substring(0, 200)}`,
-        );
-      }
-
-      const stdout = await new Response(infoProc.stdout).text();
-      const lines = stdout.trim().split("\n");
-      const videos = lines.map((line) => JSON.parse(line));
-
-      logger.info(JSON.stringify(videos, null, 2));
-
-      if (videos.length === 0) {
-        throw new Error("No videos found in playlist");
-      }
-
-      const playlistInfo = videos[0];
-      const playlistId = playlistInfo.playlist_id || playlistInfo.id;
-      const playlistTitle =
-        playlistInfo.playlist_title || playlistInfo.title || "YouTube Playlist";
-      const playlistThumbnails = playlistInfo.thumbnails;
-
-      logger.info(
-        `Downloading ${videos.length} videos from playlist: ${playlistTitle}`,
-        { context: "YOUTUBE" },
-      );
-
-      const youtubePlaylistId = `youtube_${playlistId}`;
-      const dbPlaylistId = await PlaylistService.findOrCreateYoutubePlaylist(
-        playlistId,
-        playlistTitle,
-      );
-
-      const existingPlaylist = await PlaylistRepository.findById(dbPlaylistId);
-      let playlistCoverImage: string | null =
-        existingPlaylist?.coverImage || null;
-
-      if (
-        !playlistCoverImage &&
-        playlistThumbnails &&
-        playlistThumbnails.length > 0
-      ) {
-        const bestThumbnail = playlistThumbnails[playlistThumbnails.length - 1];
-        if (bestThumbnail.url) {
-          const urlObj = new URL(bestThumbnail.url);
-          let imageExt = extname(urlObj.pathname).toLowerCase();
-          if (
-            !imageExt ||
-            !/^\.(jpe?g|png|gif|bmp|webp|avif)$/i.test(imageExt)
-          ) {
-            imageExt = ".jpg";
-          }
-          const imageFileName = `playlist_youtube_${playlistId}${imageExt}`;
-          const imagePath = join(UPLOADS_DIR, imageFileName);
-
-          logger.info(`Downloading playlist thumbnail: ${bestThumbnail.url}`, {
-            context: "YOUTUBE",
-          });
-
-          const downloaded = await downloadImage(bestThumbnail.url, imagePath);
-          if (downloaded) {
-            playlistCoverImage = imageFileName;
-            logger.info(`Playlist thumbnail saved: ${imageFileName}`, {
-              context: "YOUTUBE",
-            });
-          }
-        }
-      }
-
-
-      logger.info(`Starting to download ${videos.length} videos one by one`, {
-        context: "YOUTUBE",
-      });
-
-      const results = [];
-      for (let index = 0; index < videos.length; index++) {
-        const video = videos[index];
-        const videoId = video.id;
-        const videoTitle = video.title || "Unknown";
-        const videoUrl =
-          video.url || `https://www.youtube.com/watch?v=${videoId}`;
-
-        console.log(
-          `\n[${index + 1}/${videos.length}] Downloading: ${videoTitle}`,
-        );
-        logger.info(
-          `Downloading video ${index + 1}/${videos.length}: ${videoTitle}`,
-          { context: "YOUTUBE" },
-        );
-
-        try {
-          const result = await this.downloadYoutubeSingle(
-            videoUrl,
-            userId,
-            dbPlaylistId,
-          );
-
-          console.log(`✓ Successfully added to database`);
-          results.push({
-            ...result,
-            message: result.message || "Downloaded successfully",
-          });
-        } catch (error: any) {
-          const errorMessage = error.message || "Unknown error occurred";
-          console.log(`✗ Failed: ${errorMessage}`);
-          logger.error(`Failed to download video: ${videoTitle}`, error, {
-            context: "YOUTUBE",
-          });
-
-          results.push({
-            success: false as const,
-            title: videoTitle,
-            error: errorMessage,
-          });
-        }
-
-        if (index < videos.length - 1) {
-          const delaySeconds = 2;
-          console.log(
-            `Waiting ${delaySeconds} seconds before next download...`,
-          );
-          await new Promise((resolve) =>
-            setTimeout(resolve, delaySeconds * 1000),
-          );
-        }
-      }
-
-      console.log(`\nPlaylist download complete!`);
-
-      const successfulDownloads = results.filter((r) => r.success).length;
-      const failedDownloads = results.filter((r) => !r.success).length;
-      const totalVideos = videos.length;
-      const allSuccessful = failedDownloads === 0;
-
-      if (!playlistCoverImage && successfulDownloads > 0) {
-        const firstSuccessfulTrack = results.find(
-          (r) => r.success && "imageFile" in r,
-        );
-        if (
-          firstSuccessfulTrack &&
-          "imageFile" in firstSuccessfulTrack &&
-          firstSuccessfulTrack.imageFile
-        ) {
-          playlistCoverImage = firstSuccessfulTrack.imageFile;
-          logger.info(
-            `Using first track's image as playlist cover: ${playlistCoverImage}`,
-            { context: "YOUTUBE" },
-          );
-        }
-      }
-
-      if (
-        playlistCoverImage &&
-        playlistCoverImage !== existingPlaylist?.coverImage
-      ) {
-        await PlaylistRepository.update(dbPlaylistId, {
-          coverImage: playlistCoverImage,
-        });
-        logger.info(`Updated playlist cover image: ${playlistCoverImage}`, {
-          context: "YOUTUBE",
-        });
-      }
-
-      logger.info(
-        `Playlist download completed: ${successfulDownloads}/${totalVideos} successful`,
-        { context: "YOUTUBE" },
-      );
-
-      return {
-        success: allSuccessful,
-        isPlaylist: true as const,
-        playlistId: youtubePlaylistId,
-        playlistTitle,
-        results,
-        totalVideos,
-        successfulDownloads,
-        failedDownloads,
-        message: allSuccessful
-          ? `Successfully downloaded all ${successfulDownloads} videos from playlist`
-          : `Downloaded ${successfulDownloads} of ${totalVideos} videos. ${failedDownloads} failed.`,
-      };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error occurred";
-      throw status(500, `Failed to download YouTube playlist: ${errorMessage}`);
-    }
-  }
-
   static async getAudioById(
     id: string,
-    userId?: string,
+    userId?: string
   ): Promise<AudioModel.audioFile> {
     const dbFile = await AudioRepository.findById(id, userId);
 
@@ -951,7 +486,7 @@ export abstract class AudioService {
 
   static async deleteAudio(
     id: string,
-    userId?: string,
+    userId?: string
   ): Promise<AudioModel.deleteResponse> {
     const file = await this.getAudioById(id, userId);
     const filePath = join(UPLOADS_DIR, file.filename);
@@ -976,7 +511,7 @@ export abstract class AudioService {
 
   static async getAudioStream(
     id: string,
-    userId?: string,
+    userId?: string
   ): Promise<{ file: AudioModel.audioFile; filePath: string }> {
     const file = await this.getAudioById(id, userId);
     const filePath = join(UPLOADS_DIR, file.filename);
@@ -990,7 +525,7 @@ export abstract class AudioService {
 
   static async getImageStream(
     id: string,
-    userId?: string,
+    userId?: string
   ): Promise<{ file: AudioModel.audioFile; imagePath: string }> {
     const file = await this.getAudioById(id, userId);
 
@@ -1000,7 +535,7 @@ export abstract class AudioService {
 
     const baseImageName = file.imageFile.substring(
       0,
-      file.imageFile.lastIndexOf("."),
+      file.imageFile.lastIndexOf(".")
     );
     const webpImageName = `${baseImageName}.webp`;
     const webpImagePath = join(UPLOADS_DIR, webpImageName);
@@ -1027,7 +562,7 @@ export abstract class AudioService {
       page?: number;
       limit?: number;
       userId?: string;
-    },
+    }
   ): Promise<AudioModel.audioListResponse> {
     const { page = 1, limit = 20, userId } = options || {};
 
@@ -1054,7 +589,7 @@ export abstract class AudioService {
 
   static async searchSuggestions(
     query: string,
-    limit: number = 5,
+    limit: number = 5
   ): Promise<AudioModel.searchSuggestionsResponse> {
     const suggestions = await AudioRepository.searchSuggestions(query, limit);
     return { suggestions };
@@ -1087,7 +622,7 @@ export abstract class AudioService {
 
     if (firstTrackId) {
       const firstTrackIndex = shuffledFiles.findIndex(
-        (file) => file.id === firstTrackId,
+        (file) => file.id === firstTrackId
       );
 
       if (firstTrackIndex !== -1) {
@@ -1101,7 +636,7 @@ export abstract class AudioService {
     const paginatedFiles = shuffledFiles.slice(offset, offset + limit);
 
     const files = paginatedFiles.map((dbFile) =>
-      AudioRepository.toAudioModel(dbFile),
+      AudioRepository.toAudioModel(dbFile)
     );
 
     const totalPages = Math.ceil(total / limit);
@@ -1117,10 +652,10 @@ export abstract class AudioService {
     };
   }
 
-  static async downloadYoutubeWithProgress(
+  static async downloadYoutube(
     url: string,
     userId: string,
-    sendEvent: (event: AudioModel.youtubeProgressEvent) => void,
+    sendEvent: (event: AudioModel.youtubeProgressEvent) => void
   ): Promise<void> {
     try {
       sendEvent({
@@ -1140,195 +675,491 @@ export abstract class AudioService {
       const isPlaylist = url.includes("list=") || url.includes("/playlist");
 
       if (isPlaylist) {
-        sendEvent({
-          type: "info",
-          message: "Playlist detected, fetching info...",
-        });
+        await this.downloadYoutubePlaylist(url, userId, sendEvent);
       } else {
-        sendEvent({
-          type: "info",
-          message: "Checking video...",
-        });
+        await this.downloadYoutubeSingle(url, userId, sendEvent);
       }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      logger.error("YouTube download failed", error, {
+        context: "YOUTUBE",
+      });
+      throw new Error(errorMessage);
+    }
+  }
 
-      const videoId = isPlaylist ? null : new URL(url).searchParams.get("v");
+  private static async downloadYoutubeSingle(
+    url: string,
+    userId: string,
+    sendEvent: (event: AudioModel.youtubeProgressEvent) => void,
+    playlistId?: string
+  ): Promise<AudioModel.youtubeResponse> {
+    sendEvent({
+      type: "info",
+      message: "Checking video...",
+    });
 
-      if (videoId) {
-        const existing = await AudioRepository.findByYoutubeId(videoId);
-        if (existing) {
-          const userMapping = await AudioFileUserRepository.findByAudioAndUser(
-            existing.id,
+    const videoId = new URL(url).searchParams.get("v");
+
+    if (videoId) {
+      const existing = await AudioRepository.findByYoutubeId(videoId);
+      if (existing) {
+        const userMapping = await AudioFileUserRepository.findByAudioAndUser(
+          existing.id,
+          userId
+        );
+
+        if (!userMapping) {
+          await AudioFileUserRepository.create({
+            id: crypto.randomUUID(),
+            audioFileId: existing.id,
             userId,
-          );
+          });
+        }
 
-          if (!userMapping) {
-            await AudioFileUserRepository.create({
+        if (playlistId) {
+          const existingItem =
+            await PlaylistRepository.findItemByAudioAndPlaylist(
+              playlistId,
+              existing.id
+            );
+
+          if (!existingItem) {
+            const maxPosition =
+              await PlaylistRepository.getMaxPosition(playlistId);
+            await PlaylistRepository.addItem({
               id: crypto.randomUUID(),
-              audioFileId: existing.id,
-              userId,
-            });
-            sendEvent({
-              type: "complete",
-              message: "Video already exists, added to your library",
-              result: {
-                success: true,
-                id: existing.id,
-                filename: existing.filename,
-                title: existing.title || existing.filename,
-                imageFile: existing.imageFile || undefined,
-                message: "Added to your library",
-              },
-            });
-            return;
-          } else {
-            sendEvent({
-              type: "complete",
-              message: "Video already in your library",
-              result: {
-                success: true,
-                id: existing.id,
-                filename: existing.filename,
-                title: existing.title || existing.filename,
-                imageFile: existing.imageFile || undefined,
-                message: "Already in your library",
-              },
-            });
-            return;
-          }
-        }
-      }
-
-      sendEvent({
-        type: "info",
-        message: "Starting download...",
-      });
-
-      const id = generateId() + "_" + (videoId || "yt");
-      const filename = `${id}.mp3`;
-      const filePath = join(UPLOADS_DIR, filename);
-
-      let hasCookies = false;
-      try {
-        hasCookies = existsSync("cookies.txt");
-      } catch (error) {
-        logger.error("Error checking for cookies.txt", error);
-      }
-
-      const ytDlpArgs = [
-        ...this.getYtDlpBaseArgs(hasCookies),
-        "--newline",
-        "--no-playlist",
-        "-o",
-        filePath,
-        url,
-      ];
-
-      const proc = Bun.spawn(["yt-dlp", ...ytDlpArgs], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      const reader = proc.stdout.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.includes("[download]")) {
-            const progressData = this.parseYtDlpProgress(line);
-            if (progressData) {
-              sendEvent({
-                type: "progress",
-                message: `Downloading: ${progressData.percent?.toFixed(1)}%`,
-                data: progressData,
-              });
-            }
-          } else if (line.includes("[ExtractAudio]")) {
-            sendEvent({
-              type: "info",
-              message: "Converting to MP3...",
-            });
-          } else if (line.includes("[EmbedThumbnail]")) {
-            sendEvent({
-              type: "info",
-              message: "Embedding thumbnail...",
+              playlistId: playlistId,
+              audioId: existing.id,
+              position: maxPosition + 1,
+              addedAt: new Date(),
             });
           }
         }
+
+        const result: AudioModel.youtubeResponse = {
+          success: true,
+          id: existing.id,
+          filename: existing.filename,
+          title: existing.title || existing.filename,
+          imageFile: existing.imageFile || undefined,
+          message: userMapping
+            ? "Already in your library"
+            : "Added to your library",
+        };
+
+        if (!playlistId) {
+          sendEvent({
+            type: "complete",
+            message: result.message,
+            result,
+          });
+        }
+
+        return result;
       }
+    }
 
-      const exitCode = await proc.exited;
+    sendEvent({
+      type: "info",
+      message: "Starting download...",
+    });
 
-      if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
-        logger.error("yt-dlp failed", new Error(stderr), {
-          context: "YOUTUBE",
-        });
-        throw new Error(`Download failed: ${stderr.substring(0, 200)}`);
+    const id = generateId() + "_" + (videoId || "yt");
+    const filename = `${id}.mp3`;
+    const filePath = join(UPLOADS_DIR, filename);
+
+    let hasCookies = false;
+    try {
+      hasCookies = existsSync("cookies.txt");
+    } catch (error) {
+      logger.error("Error checking for cookies.txt", error);
+    }
+
+    const ytDlpArgs = [
+      ...this.getYtDlpBaseArgs(hasCookies),
+      "--newline",
+      "--no-playlist",
+      "-o",
+      filePath,
+      url,
+    ];
+
+    const proc = Bun.spawn(["yt-dlp", ...ytDlpArgs], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const reader = proc.stdout.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (line.includes("[download]")) {
+          const progressData = this.parseYtDlpProgress(line);
+          if (progressData) {
+            sendEvent({
+              type: "progress",
+              message: `Downloading: ${progressData.percent?.toFixed(1)}%`,
+              data: progressData,
+            });
+          }
+        } else if (line.includes("[ExtractAudio]")) {
+          sendEvent({
+            type: "info",
+            message: "Converting to MP3...",
+          });
+        } else if (line.includes("[EmbedThumbnail]")) {
+          sendEvent({
+            type: "info",
+            message: "Embedding thumbnail...",
+          });
+        }
       }
+    }
 
-      sendEvent({
-        type: "info",
-        message: "Processing file...",
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0) {
+      const stderr = await new Response(proc.stderr).text();
+      logger.error("yt-dlp failed", new Error(stderr), {
+        context: "YOUTUBE",
       });
+      throw new Error(`Download failed: ${stderr.substring(0, 200)}`);
+    }
 
-      await this.cropAndReembedThumbnail(filePath);
+    sendEvent({
+      type: "info",
+      message: "Processing file...",
+    });
 
-      const stats = await stat(filePath);
-      const extractedMetadata = await this.extractMetadata(filePath);
-      const extractedImage = await this.extractAlbumArt(filePath, id);
+    await this.cropAndReembedThumbnail(filePath);
 
-      await AudioRepository.create(
-        AudioRepository.fromMetadata(
-          id,
-          filename,
-          stats.size,
-          extractedMetadata ?? undefined,
-          extractedImage ?? undefined,
-          videoId || undefined,
-        ),
-      );
+    const stats = await stat(filePath);
+    const extractedMetadata = await this.extractMetadata(filePath);
+    const extractedImage = await this.extractAlbumArt(filePath, id);
 
-      await AudioFileUserRepository.create({
-        id: crypto.randomUUID(),
-        audioFileId: id,
-        userId,
-      });
-
-      await PlaylistService.addTrackToAutoPlaylists(
-        id,
-        extractedMetadata?.artist,
-        extractedMetadata?.album,
-      );
-
-      const result: AudioModel.youtubeResponse = {
-        success: true,
+    await AudioRepository.create(
+      AudioRepository.fromMetadata(
         id,
         filename,
-        title: extractedMetadata?.title || filename,
-        imageFile: extractedImage || undefined,
-        message: "YouTube audio downloaded successfully",
-      };
+        stats.size,
+        extractedMetadata ?? undefined,
+        extractedImage ?? undefined,
+        videoId || undefined
+      )
+    );
 
+    await AudioFileUserRepository.create({
+      id: crypto.randomUUID(),
+      audioFileId: id,
+      userId,
+    });
+
+    await PlaylistService.addTrackToAutoPlaylists(
+      id,
+      extractedMetadata?.artist,
+      extractedMetadata?.album
+    );
+
+    if (playlistId) {
+      const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
+        playlistId,
+        id
+      );
+
+      if (!existingItem) {
+        const maxPosition = await PlaylistRepository.getMaxPosition(playlistId);
+        await PlaylistRepository.addItem({
+          id: crypto.randomUUID(),
+          playlistId: playlistId,
+          audioId: id,
+          position: maxPosition + 1,
+          addedAt: new Date(),
+        });
+      }
+    }
+
+    const result: AudioModel.youtubeResponse = {
+      success: true,
+      id,
+      filename,
+      title: extractedMetadata?.title || filename,
+      imageFile: extractedImage || undefined,
+      message: "YouTube audio downloaded successfully",
+    };
+
+    if (!playlistId) {
       sendEvent({
         type: "complete",
         message: "Download complete!",
         result,
       });
+    }
+
+    return result;
+  }
+
+  private static async downloadYoutubePlaylist(
+    url: string,
+    userId: string,
+    sendEvent: (event: AudioModel.youtubeProgressEvent) => void
+  ): Promise<void> {
+    sendEvent({
+      type: "info",
+      message: "Playlist detected, fetching info...",
+    });
+
+    let hasCookies = false;
+    try {
+      hasCookies = existsSync("cookies.txt");
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error occurred";
-      logger.error("YouTube download with progress failed", error, {
+      logger.error("Error checking for cookies.txt", error);
+    }
+
+    if (hasCookies) {
+      logger.info(`Using cookies in cookies.txt`);
+    }
+
+    logger.info(`Fetching YouTube playlist info: ${url}`, {
+      context: "YOUTUBE",
+    });
+
+    const infoArgs = [
+      ...(hasCookies ? ["--cookies", "cookies.txt"] : []),
+      "--user-agent",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      "--dump-json",
+      "--flat-playlist",
+      url,
+    ];
+
+    const infoProc = Bun.spawn(["yt-dlp", ...infoArgs], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const infoExitCode = await infoProc.exited;
+
+    if (infoExitCode !== 0) {
+      const stderr = await new Response(infoProc.stderr).text();
+      throw new Error(
+        `Failed to fetch playlist info: ${stderr.substring(0, 200)}`
+      );
+    }
+
+    const stdout = await new Response(infoProc.stdout).text();
+    const lines = stdout.trim().split("\n");
+    const videos = lines.map((line) => JSON.parse(line));
+
+    logger.info(JSON.stringify(videos, null, 2));
+
+    if (videos.length === 0) {
+      throw new Error("No videos found in playlist");
+    }
+
+    const playlistInfo = videos[0];
+    const playlistId = playlistInfo.playlist_id || playlistInfo.id;
+    const playlistTitle =
+      playlistInfo.playlist_title || playlistInfo.title || "YouTube Playlist";
+    const playlistThumbnails = playlistInfo.thumbnails;
+
+    sendEvent({
+      type: "info",
+      message: `Found ${videos.length} videos in playlist: ${playlistTitle}`,
+    });
+
+    logger.info(
+      `Downloading ${videos.length} videos from playlist: ${playlistTitle}`,
+      { context: "YOUTUBE" }
+    );
+
+    const youtubePlaylistId = `youtube_${playlistId}`;
+    const dbPlaylistId = await PlaylistService.findOrCreateYoutubePlaylist(
+      playlistId,
+      playlistTitle
+    );
+
+    const existingPlaylist = await PlaylistRepository.findById(dbPlaylistId);
+    let playlistCoverImage: string | null =
+      existingPlaylist?.coverImage || null;
+
+    if (
+      !playlistCoverImage &&
+      playlistThumbnails &&
+      playlistThumbnails.length > 0
+    ) {
+      const bestThumbnail = playlistThumbnails[playlistThumbnails.length - 1];
+      if (bestThumbnail.url) {
+        const urlObj = new URL(bestThumbnail.url);
+        let imageExt = extname(urlObj.pathname).toLowerCase();
+        if (!imageExt || !/^\.(jpe?g|png|gif|bmp|webp|avif)$/i.test(imageExt)) {
+          imageExt = ".jpg";
+        }
+        const imageFileName = `playlist_youtube_${playlistId}${imageExt}`;
+        const imagePath = join(UPLOADS_DIR, imageFileName);
+
+        logger.info(`Downloading playlist thumbnail: ${bestThumbnail.url}`, {
+          context: "YOUTUBE",
+        });
+
+        const downloaded = await downloadImage(bestThumbnail.url, imagePath);
+        if (downloaded) {
+          playlistCoverImage = imageFileName;
+          logger.info(`Playlist thumbnail saved: ${imageFileName}`, {
+            context: "YOUTUBE",
+          });
+        }
+      }
+    }
+
+    sendEvent({
+      type: "info",
+      message: `Starting to download ${videos.length} videos...`,
+    });
+
+    logger.info(`Starting to download ${videos.length} videos one by one`, {
+      context: "YOUTUBE",
+    });
+
+    const results = [];
+    for (let index = 0; index < videos.length; index++) {
+      const video = videos[index];
+      const videoId = video.id;
+      const videoTitle = video.title || "Unknown";
+      const videoUrl =
+        video.url || `https://www.youtube.com/watch?v=${videoId}`;
+
+      sendEvent({
+        type: "info",
+        message: `[${index + 1}/${videos.length}] Downloading: ${videoTitle}`,
+      });
+
+      console.log(
+        `\n[${index + 1}/${videos.length}] Downloading: ${videoTitle}`
+      );
+      logger.info(
+        `Downloading video ${index + 1}/${videos.length}: ${videoTitle}`,
+        { context: "YOUTUBE" }
+      );
+
+      try {
+        const result = await this.downloadYoutubeSingle(
+          videoUrl,
+          userId,
+          sendEvent,
+          dbPlaylistId
+        );
+
+        console.log(`✓ Successfully added to database`);
+        results.push({
+          ...result,
+          message: result.message || "Downloaded successfully",
+        });
+
+        sendEvent({
+          type: "info",
+          message: `✓ Completed: ${videoTitle}`,
+        });
+      } catch (error: any) {
+        const errorMessage = error.message || "Unknown error occurred";
+        console.log(`✗ Failed: ${errorMessage}`);
+        logger.error(`Failed to download video: ${videoTitle}`, error, {
+          context: "YOUTUBE",
+        });
+
+        results.push({
+          success: false as const,
+          title: videoTitle,
+          error: errorMessage,
+        });
+
+        sendEvent({
+          type: "info",
+          message: `✗ Failed: ${videoTitle} - ${errorMessage}`,
+        });
+      }
+
+      if (index < videos.length - 1) {
+        const delaySeconds = 2;
+        sendEvent({
+          type: "info",
+          message: `Waiting ${delaySeconds} seconds before next download...`,
+        });
+        await new Promise((resolve) =>
+          setTimeout(resolve, delaySeconds * 1000)
+        );
+      }
+    }
+
+    console.log(`\nPlaylist download complete!`);
+
+    const successfulDownloads = results.filter((r) => r.success).length;
+    const failedDownloads = results.filter((r) => !r.success).length;
+    const totalVideos = videos.length;
+    const allSuccessful = failedDownloads === 0;
+
+    if (!playlistCoverImage && successfulDownloads > 0) {
+      const firstSuccessfulTrack = results.find(
+        (r) => r.success && "imageFile" in r
+      );
+      if (
+        firstSuccessfulTrack &&
+        "imageFile" in firstSuccessfulTrack &&
+        firstSuccessfulTrack.imageFile
+      ) {
+        playlistCoverImage = firstSuccessfulTrack.imageFile;
+        logger.info(
+          `Using first track's image as playlist cover: ${playlistCoverImage}`,
+          { context: "YOUTUBE" }
+        );
+      }
+    }
+
+    if (
+      playlistCoverImage &&
+      playlistCoverImage !== existingPlaylist?.coverImage
+    ) {
+      await PlaylistRepository.update(dbPlaylistId, {
+        coverImage: playlistCoverImage,
+      });
+      logger.info(`Updated playlist cover image: ${playlistCoverImage}`, {
         context: "YOUTUBE",
       });
-      throw new Error(errorMessage);
     }
+
+    logger.info(
+      `Playlist download completed: ${successfulDownloads}/${totalVideos} successful`,
+      { context: "YOUTUBE" }
+    );
+
+    const playlistResult: AudioModel.youtubePlaylistResponse = {
+      success: allSuccessful,
+      isPlaylist: true as const,
+      playlistId: youtubePlaylistId,
+      playlistTitle,
+      results,
+      totalVideos,
+      successfulDownloads,
+      failedDownloads,
+      message: allSuccessful
+        ? `Successfully downloaded all ${successfulDownloads} videos from playlist`
+        : `Downloaded ${successfulDownloads} of ${totalVideos} videos. ${failedDownloads} failed.`,
+    };
+
+    sendEvent({
+      type: "complete",
+      message: playlistResult.message,
+      result: playlistResult,
+    });
   }
 }

@@ -1,4 +1,4 @@
-import { AudioRepository } from "../db/repository";
+import { AudioRepository } from "../db/repositories";
 import { PlaylistService } from "../modules/playlist/service";
 import { logger } from "../utils/logger";
 
@@ -31,7 +31,7 @@ async function migrateExistingTracksToPlaylists() {
           `Skipping track ${track.id} - no artist or album metadata`,
           {
             context: "MIGRATION",
-          }
+          },
         );
         skipped++;
         continue;
@@ -39,13 +39,13 @@ async function migrateExistingTracksToPlaylists() {
 
       logger.info(
         `Processing track ${track.id}: ${track.title || track.filename}`,
-        { context: "MIGRATION" }
+        { context: "MIGRATION" },
       );
 
       await PlaylistService.addTrackToAutoPlaylists(
         track.id,
         hasArtist ? track.artist! : undefined,
-        hasAlbum ? track.album! : undefined
+        hasAlbum ? track.album! : undefined,
       );
 
       if (hasArtist) artistPlaylists++;
@@ -59,18 +59,18 @@ async function migrateExistingTracksToPlaylists() {
       logger.error(
         `Failed to process track ${track.id}`,
         error instanceof Error ? error : new Error(String(error)),
-        { context: "MIGRATION" }
+        { context: "MIGRATION" },
       );
     }
   }
 
   logger.info(
     `Migration completed! Processed: ${processed}, Skipped: ${skipped}`,
-    { context: "MIGRATION" }
+    { context: "MIGRATION" },
   );
   logger.info(
     `Artist playlists updated: ${artistPlaylists}, Album playlists updated: ${albumPlaylists}`,
-    { context: "MIGRATION" }
+    { context: "MIGRATION" },
   );
 }
 
@@ -85,7 +85,7 @@ migrateExistingTracksToPlaylists()
     logger.error(
       "Migration script failed",
       error instanceof Error ? error : new Error(String(error)),
-      { context: "MIGRATION" }
+      { context: "MIGRATION" },
     );
     process.exit(1);
   });

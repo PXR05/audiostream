@@ -1,11 +1,10 @@
 import { argon2id, argon2Verify } from "hash-wasm";
-import { UserRepository } from "../../db/repository";
+import { UserRepository } from "../../db/repositories";
 import { logger } from "../../utils/logger";
 import type { AuthModel } from "./model";
 import { SignJWT, jwtVerify } from "jose";
 
-const JWT_SECRET =
-  process.env.JWT_SECRET || "default-secret";
+const JWT_SECRET = process.env.JWT_SECRET || "default-secret";
 const JWT_EXPIRATION = "7d";
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;

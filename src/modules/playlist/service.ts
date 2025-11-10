@@ -2,7 +2,7 @@ import { status } from "elysia";
 import { existsSync, unlinkSync } from "fs";
 import { join, extname } from "path";
 import type { PlaylistModel } from "./model";
-import { PlaylistRepository, AudioRepository } from "../../db/repository";
+import { PlaylistRepository, AudioRepository } from "../../db/repositories";
 import { generateId, UPLOADS_DIR } from "../../utils/helpers";
 import { logger } from "../../utils/logger";
 
