@@ -808,9 +808,37 @@ export abstract class AudioService {
         stderr: "pipe",
       });
 
+      let stdoutText = "";
+      const stdoutReader = proc.stdout.getReader();
+      const stdoutDecoder = new TextDecoder();
+
+      const readStdout = async () => {
+        while (true) {
+          const { done, value } = await stdoutReader.read();
+          if (done) break;
+          const chunk = stdoutDecoder.decode(value, { stream: true });
+          stdoutText += chunk;
+          process.stdout.write(chunk);
+        }
+      };
+
+      let stderrText = "";
+      const stderrReader = proc.stderr.getReader();
+      const stderrDecoder = new TextDecoder();
+
+      const readStderr = async () => {
+        while (true) {
+          const { done, value } = await stderrReader.read();
+          if (done) break;
+          const chunk = stderrDecoder.decode(value, { stream: true });
+          stderrText += chunk;
+          process.stderr.write(chunk);
+        }
+      };
+
+      await Promise.all([readStdout(), readStderr()]);
+
       const exitCode = await proc.exited;
-      const stdoutText = await new Response(proc.stdout).text();
-      const stderrText = await new Response(proc.stderr).text();
 
       if (exitCode !== 0) {
         logger.error("yt-dlp playlist download failed", new Error(stderrText), {
