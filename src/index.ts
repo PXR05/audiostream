@@ -2,7 +2,7 @@ import { mkdir } from "fs/promises";
 import cluster from "node:cluster";
 import os from "node:os";
 import process from "node:process";
-import convertAllImagesToWebP from "./scripts/convert-to-webp";
+// import convertAllImagesToWebP from "./scripts/convert-to-webp";
 import migrate from "./scripts/migrate";
 import { UPLOADS_DIR } from "./utils/helpers";
 import { logger } from "./utils/logger";
@@ -29,14 +29,14 @@ if (cluster.isPrimary) {
     process.exit(1);
   }
 
-  try {
-    await convertAllImagesToWebP(85, false);
-    logger.info("Image conversion to WebP completed", { context: "STARTUP" });
-  } catch (error) {
-    logger.error("Image conversion to WebP failed", error, {
-      context: "STARTUP",
-    });
-  }
+  // try {
+  //   await convertAllImagesToWebP(85, false);
+  //   logger.info("Image conversion to WebP completed", { context: "STARTUP" });
+  // } catch (error) {
+  //   logger.error("Image conversion to WebP failed", error, {
+  //     context: "STARTUP",
+  //   });
+  // }
   
   await AuthService.seedAdminUser();
   
