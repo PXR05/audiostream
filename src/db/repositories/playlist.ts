@@ -206,4 +206,39 @@ export abstract class PlaylistRepository {
       .set({ position: newPosition })
       .where(eq(playlistItems.id, itemId));
   }
+
+  static async updateItemPosition(
+    playlistId: string,
+    audioId: string,
+    newPosition: number,
+  ): Promise<void> {
+    await db
+      .update(playlistItems)
+      .set({ position: newPosition })
+      .where(
+        and(
+          eq(playlistItems.playlistId, playlistId),
+          eq(playlistItems.audioId, audioId),
+        ),
+      );
+  }
+
+  static async reorderAllItems(
+    playlistId: string,
+    positionMap: Map<string, number>,
+  ): Promise<void> {
+    await db.transaction(async (tx) => {
+      for (const [audioId, position] of positionMap.entries()) {
+        await tx
+          .update(playlistItems)
+          .set({ position })
+          .where(
+            and(
+              eq(playlistItems.playlistId, playlistId),
+              eq(playlistItems.audioId, audioId),
+            ),
+          );
+      }
+    });
+  }
 }

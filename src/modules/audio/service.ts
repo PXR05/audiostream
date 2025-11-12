@@ -694,6 +694,7 @@ export abstract class AudioService {
     userId: string,
     sendEvent: (event: AudioModel.youtubeProgressEvent) => void,
     playlistId?: string,
+    playlistIndex?: number,
   ): Promise<AudioModel.youtubeResponse> {
     sendEvent({
       type: "info",
@@ -725,16 +726,25 @@ export abstract class AudioService {
               existing.id,
             );
 
+          const position =
+            playlistIndex !== undefined
+              ? playlistIndex - 1
+              : (await PlaylistRepository.getMaxPosition(playlistId)) + 1;
+
           if (!existingItem) {
-            const maxPosition =
-              await PlaylistRepository.getMaxPosition(playlistId);
             await PlaylistRepository.addItem({
               id: crypto.randomUUID(),
               playlistId: playlistId,
               audioId: existing.id,
-              position: maxPosition + 1,
+              position: position,
               addedAt: new Date(),
             });
+          } else if (playlistIndex !== undefined) {
+            await PlaylistRepository.updateItemPosition(
+              playlistId,
+              existing.id,
+              position,
+            );
           }
         }
 
@@ -877,15 +887,21 @@ export abstract class AudioService {
         id,
       );
 
+      const position =
+        playlistIndex !== undefined
+          ? playlistIndex - 1
+          : (await PlaylistRepository.getMaxPosition(playlistId)) + 1;
+
       if (!existingItem) {
-        const maxPosition = await PlaylistRepository.getMaxPosition(playlistId);
         await PlaylistRepository.addItem({
           id: crypto.randomUUID(),
           playlistId: playlistId,
           audioId: id,
-          position: maxPosition + 1,
+          position: position,
           addedAt: new Date(),
         });
+      } else if (playlistIndex !== undefined) {
+        await PlaylistRepository.updateItemPosition(playlistId, id, position);
       }
     }
 
@@ -971,7 +987,6 @@ export abstract class AudioService {
     const playlistId = playlistInfo.playlist_id || playlistInfo.id;
     const playlistTitle =
       playlistInfo.playlist_title || playlistInfo.title || "YouTube Playlist";
-    const playlistThumbnails = playlistInfo.thumbnails;
 
     sendEvent({
       type: "info",
@@ -1029,6 +1044,7 @@ export abstract class AudioService {
           userId,
           sendEvent,
           dbPlaylistId,
+          video.playlist_index,
         );
 
         logger.info(`✓ Successfully added to database`);
@@ -1077,6 +1093,32 @@ export abstract class AudioService {
     const failedDownloads = results.filter((r) => !r.success).length;
     const totalVideos = videos.length;
     const allSuccessful = failedDownloads === 0;
+
+    sendEvent({
+      type: "info",
+      message: "Reordering playlist items...",
+    });
+
+    const positionMap = new Map<string, number>();
+    for (let index = 0; index < videos.length; index++) {
+      const video = videos[index];
+      const result = results[index];
+
+      if (result.success && "id" in result && result.id) {
+        const position = video.playlist_index
+          ? video.playlist_index - 1
+          : index;
+        positionMap.set(result.id, position);
+      }
+    }
+
+    if (positionMap.size > 0) {
+      await PlaylistRepository.reorderAllItems(dbPlaylistId, positionMap);
+      logger.info(
+        `Reordered ${positionMap.size} playlist items to match YouTube order`,
+        { context: "YOUTUBE" },
+      );
+    }
 
     if (!playlistCoverImage && successfulDownloads > 0) {
       const firstSuccessfulTrack = results.find(
