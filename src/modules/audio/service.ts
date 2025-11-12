@@ -1006,8 +1006,6 @@ export abstract class AudioService {
     );
 
     const existingPlaylist = await PlaylistRepository.findById(dbPlaylistId);
-    let playlistCoverImage: string | null =
-      existingPlaylist?.coverImage || null;
 
     sendEvent({
       type: "info",
@@ -1076,7 +1074,7 @@ export abstract class AudioService {
         });
       }
 
-      if (index < videos.length - 1 && !results[index].isExisting) { 
+      if (index < videos.length - 1 && !results[index].isExisting) {
         const delaySeconds = 2;
         sendEvent({
           type: "info",
@@ -1121,20 +1119,48 @@ export abstract class AudioService {
       );
     }
 
+    let playlistCoverImage: string | null =
+      existingPlaylist?.coverImage || null;
     if (!playlistCoverImage && successfulDownloads > 0) {
-      const firstSuccessfulTrack = results.find(
-        (r) => r.success && "imageFile" in r,
-      );
-      if (
-        firstSuccessfulTrack &&
-        "imageFile" in firstSuccessfulTrack &&
-        firstSuccessfulTrack.imageFile
-      ) {
-        playlistCoverImage = firstSuccessfulTrack.imageFile;
-        logger.info(
-          `Using first track's image as playlist cover: ${playlistCoverImage}`,
-          { context: "YOUTUBE" },
-        );
+      let firstTrackId = null;
+      for (let index = 0; index < videos.length; index++) {
+        const video = videos[index];
+        const result = results[index];
+        const position = video.playlist_index
+          ? video.playlist_index - 1
+          : index;
+
+        if (position === 0 && result.success && "id" in result && result.id) {
+          firstTrackId = result.id;
+          break;
+        }
+      }
+
+      if (firstTrackId) {
+        try {
+          const audioFile = await AudioRepository.findById(firstTrackId);
+          if (audioFile) {
+            const audioPath = join(UPLOADS_DIR, audioFile.filename);
+            const coverImageId = crypto.randomUUID();
+            const extractedCoverImage = await this.extractAlbumArt(
+              audioPath,
+              coverImageId,
+            );
+            if (extractedCoverImage) {
+              playlistCoverImage = extractedCoverImage;
+              logger.info(
+                `Extracted album art from first track's file for playlist cover: ${playlistCoverImage}`,
+                { context: "YOUTUBE" },
+              );
+            }
+          }
+        } catch (error) {
+          logger.error(
+            "Failed to extract album art from first track for playlist cover",
+            error,
+            { context: "YOUTUBE" },
+          );
+        }
       }
     }
 
