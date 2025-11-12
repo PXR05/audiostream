@@ -43,5 +43,5 @@ if (cluster.isPrimary) {
   for (let i = 0; i < os.availableParallelism(); i++) cluster.fork();
 } else {
   await import("./server");
-  console.log(`Worker ${process.pid} started`);
+  logger.info(`Worker ${process.pid} started`);
 }

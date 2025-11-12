@@ -324,8 +324,7 @@ export abstract class PlaylistService {
         }
       }
 
-      const id = generateId();
-      coverImageFile = `playlist_${id}${ext}`;
+      coverImageFile = `playlist_${playlistId}${ext}`;
       const filePath = join(UPLOADS_DIR, coverImageFile);
 
       try {

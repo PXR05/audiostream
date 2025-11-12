@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import { AudioService } from "./service";
 import { AudioModel } from "./model";
 import { authPlugin, type AuthData } from "../../utils/auth";
+import { logger } from "../../utils/logger";
 
 export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
   .use(authPlugin)
@@ -200,7 +201,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
           }
         },
         cancel() {
-          console.log(
+          logger.warn(
             "SSE connection closed by client, download will continue in background"
           );
         },
