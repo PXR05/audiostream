@@ -118,6 +118,7 @@ export namespace AudioModel {
     title: t.String(),
     imageFile: t.Optional(t.String()),
     message: t.String(),
+    isExisting: t.Optional(t.Boolean()),
   });
   export type youtubeResponse = typeof youtubeResponse.static;
 

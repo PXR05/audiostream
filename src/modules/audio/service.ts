@@ -750,6 +750,7 @@ export abstract class AudioService {
 
         const result: AudioModel.youtubeResponse = {
           success: true,
+          isExisting: true,
           id: existing.id,
           filename: existing.filename,
           title: existing.title || existing.filename,
@@ -1075,7 +1076,7 @@ export abstract class AudioService {
         });
       }
 
-      if (index < videos.length - 1) {
+      if (index < videos.length - 1 && !results[index].isExisting) { 
         const delaySeconds = 2;
         sendEvent({
           type: "info",
