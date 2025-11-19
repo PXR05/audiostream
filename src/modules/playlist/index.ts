@@ -27,9 +27,7 @@ export const playlistController = new Elysia({
         throw new Error("Authentication required");
       }
 
-      const userId = storeWithAuth.auth.isAdmin
-        ? "admin"
-        : storeWithAuth.auth.userId;
+      const userId = storeWithAuth.auth.userId;
 
       return await PlaylistService.createPlaylist(
         userId,
@@ -56,9 +54,7 @@ export const playlistController = new Elysia({
         throw new Error("Authentication required");
       }
 
-      const userId = storeWithAuth.auth.isAdmin
-        ? "admin"
-        : storeWithAuth.auth.userId;
+      const userId = storeWithAuth.auth.userId;
 
       return await PlaylistService.getUserPlaylists(userId, query.type, query.limit);
     },
@@ -83,9 +79,7 @@ export const playlistController = new Elysia({
         throw new Error("Authentication required");
       }
 
-      const userId = storeWithAuth.auth.isAdmin
-        ? "admin"
-        : storeWithAuth.auth.userId;
+      const userId = storeWithAuth.auth.userId;
 
       return await PlaylistService.getPlaylistById(id, userId);
     },
@@ -107,9 +101,7 @@ export const playlistController = new Elysia({
         throw new Error("Authentication required");
       }
 
-      const userId = storeWithAuth.auth.isAdmin
-        ? "admin"
-        : storeWithAuth.auth.userId;
+      const userId = storeWithAuth.auth.userId;
 
       const { playlist, imagePath } =
         await PlaylistService.getPlaylistImageStream(id, userId);
@@ -147,9 +139,7 @@ export const playlistController = new Elysia({
         throw new Error("Authentication required");
       }
 
-      const userId = storeWithAuth.auth.isAdmin
-        ? "admin"
-        : storeWithAuth.auth.userId;
+      const userId = storeWithAuth.auth.userId;
 
       return await PlaylistService.updatePlaylist(
         id,
@@ -179,9 +169,7 @@ export const playlistController = new Elysia({
         throw new Error("Authentication required");
       }
 
-      const userId = storeWithAuth.auth.isAdmin
-        ? "admin"
-        : storeWithAuth.auth.userId;
+      const userId = storeWithAuth.auth.userId;
 
       return await PlaylistService.deletePlaylist(id, userId);
     },
@@ -203,9 +191,7 @@ export const playlistController = new Elysia({
         throw new Error("Authentication required");
       }
 
-      const userId = storeWithAuth.auth.isAdmin
-        ? "admin"
-        : storeWithAuth.auth.userId;
+      const userId = storeWithAuth.auth.userId;
 
       return await PlaylistService.addItemToPlaylist(id, userId, body.audioId);
     },
@@ -233,9 +219,7 @@ export const playlistController = new Elysia({
         throw new Error("Authentication required");
       }
 
-      const userId = storeWithAuth.auth.isAdmin
-        ? "admin"
-        : storeWithAuth.auth.userId;
+      const userId = storeWithAuth.auth.userId;
 
       return await PlaylistService.removeItemFromPlaylist(id, itemId, userId);
     },
@@ -257,9 +241,7 @@ export const playlistController = new Elysia({
         throw new Error("Authentication required");
       }
 
-      const userId = storeWithAuth.auth.isAdmin
-        ? "admin"
-        : storeWithAuth.auth.userId;
+      const userId = storeWithAuth.auth.userId;
 
       return await PlaylistService.reorderPlaylistItem(
         id,

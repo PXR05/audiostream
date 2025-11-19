@@ -32,6 +32,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         limit: query.limit,
         sortBy: query.sortBy,
         sortOrder: query.sortOrder,
+        lastFetchedAt: query.lastFetchedAt,
         userId,
       });
     },

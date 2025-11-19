@@ -30,73 +30,25 @@ export abstract class PlaylistService {
     }
   }
 
-  static async findOrCreateArtistPlaylist(artistName: string): Promise<string> {
-    const playlistId = this.generatePlaylistId("artist", artistName);
-
-    const existing = await PlaylistRepository.findById(playlistId);
-    if (existing) {
-      return existing.id;
-    }
-
-    const playlist = await PlaylistRepository.create({
-      id: playlistId,
-      name: artistName,
-      userId: "admin",
-      coverImage: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    logger.info(`Created artist playlist: ${playlist.id} (${playlist.name})`, {
-      context: "PLAYLIST",
-    });
-
-    return playlist.id;
-  }
-
-  static async findOrCreateAlbumPlaylist(
-    albumName: string,
-    artistName?: string,
-  ): Promise<string> {
-    const uniqueName = artistName ? `${albumName}_${artistName}` : albumName;
-    const playlistId = this.generatePlaylistId("album", uniqueName);
-
-    const existing = await PlaylistRepository.findById(playlistId);
-    if (existing) {
-      return existing.id;
-    }
-
-    const playlist = await PlaylistRepository.create({
-      id: playlistId,
-      name: albumName,
-      userId: "admin",
-      coverImage: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    logger.info(`Created album playlist: ${playlist.id} (${playlist.name})`, {
-      context: "PLAYLIST",
-    });
-
-    return playlist.id;
-  }
-
   static async findOrCreateYoutubePlaylist(
     youtubePlaylistId: string,
     playlistTitle: string,
+    userId: string,
   ): Promise<string> {
     const playlistId = `youtube_${youtubePlaylistId}`;
 
     const existing = await PlaylistRepository.findById(playlistId);
     if (existing) {
+      if (existing.userId !== userId) {
+        throw status(403, "You don't have access to this playlist");
+      }
       return existing.id;
     }
 
     const playlist = await PlaylistRepository.create({
       id: playlistId,
       name: playlistTitle,
-      userId: "admin",
+      userId: userId,
       coverImage: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -107,49 +59,6 @@ export abstract class PlaylistService {
     });
 
     return playlist.id;
-  }
-
-  static async addTrackToAutoPlaylists(
-    audioId: string,
-    artist?: string,
-    album?: string,
-  ): Promise<void> {
-    const playlistsToAdd: string[] = [];
-
-    if (artist) {
-      const artistPlaylistId = await this.findOrCreateArtistPlaylist(artist);
-      playlistsToAdd.push(artistPlaylistId);
-    }
-
-    if (album) {
-      const albumPlaylistId = await this.findOrCreateAlbumPlaylist(
-        album,
-        artist,
-      );
-      playlistsToAdd.push(albumPlaylistId);
-    }
-
-    for (const playlistId of playlistsToAdd) {
-      const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
-        playlistId,
-        audioId,
-      );
-
-      if (!existingItem) {
-        const maxPosition = await PlaylistRepository.getMaxPosition(playlistId);
-        await PlaylistRepository.addItem({
-          id: crypto.randomUUID(),
-          playlistId,
-          audioId,
-          position: maxPosition + 1,
-          addedAt: new Date(),
-        });
-
-        logger.info(`Added track ${audioId} to playlist ${playlistId}`, {
-          context: "PLAYLIST",
-        });
-      }
-    }
   }
 
   static async createPlaylist(
@@ -231,7 +140,7 @@ export abstract class PlaylistService {
 
     const playlistsWithCount = await Promise.all(
       playlists.map(async (playlist) => {
-        const items = await PlaylistRepository.getItems(playlist.id);
+        const items = await PlaylistRepository.getItems(playlist.id, userId);
         return {
           id: playlist.id,
           name: playlist.name,
@@ -261,7 +170,7 @@ export abstract class PlaylistService {
       throw status(403, "You don't have access to this playlist");
     }
 
-    const itemsData = await PlaylistRepository.getItems(playlistId);
+    const itemsData = await PlaylistRepository.getItems(playlistId, userId);
 
     const items: PlaylistModel.playlistItem[] = itemsData.map((data) => ({
       id: data.item.id,
@@ -346,7 +255,7 @@ export abstract class PlaylistService {
       throw status(500, "Failed to update playlist");
     }
 
-    const items = await PlaylistRepository.getItems(playlistId);
+    const items = await PlaylistRepository.getItems(playlistId, userId);
 
     return {
       success: true,

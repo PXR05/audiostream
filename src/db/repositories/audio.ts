@@ -5,16 +5,7 @@ import {
   type AudioFile,
   audioFileUsers,
 } from "../schema";
-import {
-  eq,
-  asc,
-  desc,
-  sql,
-  or,
-  like,
-  count,
-  and,
-} from "drizzle-orm";
+import { eq, asc, desc, sql, or, like, count, and, gt } from "drizzle-orm";
 import type { AudioModel } from "../../modules/audio/model";
 
 export abstract class AudioRepository {
@@ -24,11 +15,12 @@ export abstract class AudioRepository {
   }
 
   static async findAll(options?: {
+    userId?: string;
     page?: number;
     limit?: number;
     sortBy?: "id" | "filename" | "size" | "uploadedAt" | "title";
     sortOrder?: "asc" | "desc";
-    userId?: string;
+    lastFetchedAt?: number;
   }): Promise<{ files: AudioFile[]; total: number }> {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 20;
@@ -61,28 +53,34 @@ export abstract class AudioRepository {
       sortOrder === "asc" ? asc(orderByColumn) : desc(orderByColumn);
 
     if (userId) {
+      const whereConditions = [
+        or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
+      ];
+
+      if (options?.lastFetchedAt) {
+        whereConditions.push(
+          gt(audioFiles.uploadedAt, new Date(options.lastFetchedAt)),
+        );
+      }
+
       const userFiles = await db
         .selectDistinct({ audio_files: audioFiles })
         .from(audioFiles)
         .leftJoin(audioFileUsers, eq(audioFiles.id, audioFileUsers.audioFileId))
-        .where(
-          or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
-        )
+        .where(and(...whereConditions))
         .orderBy(orderBy)
         .limit(limit)
         .offset(offset);
 
-      const countResult = await db
-        .selectDistinct({ audio_files: audioFiles })
+      const [{ count: audioCount }] = await db
+        .select({ count: count() })
         .from(audioFiles)
         .leftJoin(audioFileUsers, eq(audioFiles.id, audioFileUsers.audioFileId))
-        .where(
-          or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
-        );
+        .where(and(...whereConditions));
 
       return {
         files: userFiles.map((f) => f.audio_files),
-        total: countResult.length,
+        total: audioCount,
       };
     }
 
@@ -166,7 +164,7 @@ export abstract class AudioRepository {
     options?: {
       page?: number;
       limit?: number;
-      userId?: string;
+      userId: string;
     },
   ): Promise<{ files: AudioFile[]; total: number }> {
     const page = options?.page ?? 1;

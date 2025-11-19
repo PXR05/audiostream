@@ -8,6 +8,7 @@ import {
   type PlaylistItem,
   audioFiles,
   type AudioFile,
+  audioFileUsers,
 } from "../schema";
 import { eq, asc, desc, sql, or, like, and, SQL, not } from "drizzle-orm";
 
@@ -108,7 +109,7 @@ export abstract class PlaylistRepository {
     return result[0];
   }
 
-  static async getItems(playlistId: string): Promise<
+  static async getItems(playlistId: string, userId: string): Promise<
     Array<{
       item: PlaylistItem;
       audio: AudioFile;
@@ -117,8 +118,14 @@ export abstract class PlaylistRepository {
     const items = await db
       .select()
       .from(playlistItems)
-      .leftJoin(audioFiles, eq(playlistItems.audioId, audioFiles.id))
-      .where(eq(playlistItems.playlistId, playlistId))
+      .innerJoin(audioFiles, eq(playlistItems.audioId, audioFiles.id))
+      .innerJoin(audioFileUsers, eq(audioFiles.id, audioFileUsers.audioFileId))
+      .where(
+        and(
+          or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
+          eq(playlistItems.playlistId, playlistId),
+        ),
+      )
       .orderBy(asc(playlistItems.position));
 
     return items

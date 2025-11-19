@@ -7,10 +7,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio",
-    "hash": "bun run src/scripts/encrypt.ts",
-    "playlists": "bun run src/scripts/auto-playlists.ts",
-    "webp": "bun run src/scripts/convert-to-webp.ts"
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@elysiajs/bearer": "^1.4.1",

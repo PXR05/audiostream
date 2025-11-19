@@ -356,7 +356,7 @@ export const logger = {
           await writeToLogFile(stackTrace);
         }
       } else {
-        const errorDetails = `  └─ ${error}`;
+        const errorDetails = `  └─ ${JSON.stringify(error)}`;
         console.error(errorDetails);
         await writeToLogFile(errorDetails);
       }

@@ -1,0 +1,1 @@
+ALTER TABLE `audio_file_users` DROP COLUMN `deleted_at`;

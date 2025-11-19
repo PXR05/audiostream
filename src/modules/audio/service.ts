@@ -20,21 +20,6 @@ import {
 import { logger } from "../../utils/logger";
 import { PlaylistService } from "../playlist/service";
 
-async function downloadImage(url: string, filepath: string): Promise<boolean> {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) return false;
-
-    const arrayBuffer = await response.arrayBuffer();
-    await Bun.write(filepath, Buffer.from(arrayBuffer));
-
-    return true;
-  } catch (error) {
-    logger.error("Failed to download image", error, { context: "YOUTUBE" });
-    return false;
-  }
-}
-
 function createSeededRandom(seed: string) {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) {
@@ -112,20 +97,6 @@ export abstract class AudioService {
       "^([^,&]+).*",
       "\\1",
     ];
-  }
-
-  private static handleYtDlpError(stderr: string): never {
-    if (stderr.includes("Private video")) {
-      throw new Error("Video is private or unavailable");
-    } else if (stderr.includes("not available")) {
-      throw new Error("Video not available in your region or was deleted");
-    } else if (stderr.includes("Sign in")) {
-      throw new Error(
-        "Video requires authentication. Add cookies.txt to project root.",
-      );
-    } else {
-      throw new Error(`Download failed: ${stderr.substring(0, 200)}`);
-    }
   }
 
   private static async cropAndReembedThumbnail(
@@ -207,73 +178,6 @@ export abstract class AudioService {
     }
   }
 
-  private static async processDownloadedVideo(
-    filePath: string,
-    id: string,
-    filename: string,
-    fileSize: number,
-    userId?: string,
-    videoId?: string,
-    playlistId?: string,
-  ): Promise<AudioModel.youtubeResponse> {
-    await this.cropAndReembedThumbnail(filePath);
-
-    const extractedMetadata = await this.extractMetadata(filePath);
-    const extractedImage = await this.extractAlbumArt(filePath, id);
-
-    await AudioRepository.create(
-      AudioRepository.fromMetadata(
-        id,
-        filename,
-        fileSize,
-        extractedMetadata ?? undefined,
-        extractedImage ?? undefined,
-        videoId,
-      ),
-    );
-
-    if (userId) {
-      await AudioFileUserRepository.create({
-        id: crypto.randomUUID(),
-        audioFileId: id,
-        userId,
-      });
-    }
-
-    await PlaylistService.addTrackToAutoPlaylists(
-      id,
-      extractedMetadata?.artist,
-      extractedMetadata?.album,
-    );
-
-    if (playlistId) {
-      const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
-        playlistId,
-        id,
-      );
-
-      if (!existingItem) {
-        const maxPosition = await PlaylistRepository.getMaxPosition(playlistId);
-        await PlaylistRepository.addItem({
-          id: crypto.randomUUID(),
-          playlistId: playlistId,
-          audioId: id,
-          position: maxPosition + 1,
-          addedAt: new Date(),
-        });
-      }
-    }
-
-    return {
-      success: true,
-      id,
-      filename,
-      title: extractedMetadata?.title || filename,
-      imageFile: extractedImage || undefined,
-      message: "YouTube audio downloaded successfully",
-    };
-  }
-
   static async extractMetadata(
     filePath: string,
   ): Promise<AudioModel.audioMetadata | null> {
@@ -322,12 +226,13 @@ export abstract class AudioService {
     }
   }
 
-  static async getAudioFiles(options?: {
+  static async getAudioFiles(options: {
+    userId: string;
     page?: number;
     limit?: number;
     sortBy?: "filename" | "size" | "uploadedAt" | "title";
     sortOrder?: "asc" | "desc";
-    userId?: string;
+    lastFetchedAt?: number;
   }): Promise<AudioModel.audioListResponse> {
     const {
       page = 1,
@@ -335,7 +240,8 @@ export abstract class AudioService {
       sortBy = "uploadedAt",
       sortOrder = "desc",
       userId,
-    } = options || {};
+      lastFetchedAt,
+    } = options;
 
     const { files: dbFiles, total } = await AudioRepository.findAll({
       page,
@@ -343,6 +249,7 @@ export abstract class AudioService {
       sortBy,
       sortOrder,
       userId,
+      lastFetchedAt
     });
 
     const files = dbFiles.map((dbFile) => AudioRepository.toAudioModel(dbFile));
@@ -362,7 +269,7 @@ export abstract class AudioService {
 
   static async uploadFile(
     file: File,
-    userId?: string,
+    userId: string,
   ): Promise<AudioModel.uploadResponse> {
     if (!file) {
       throw status(400, "No file provided");
@@ -415,13 +322,7 @@ export abstract class AudioService {
         userId,
       });
     }
-
-    await PlaylistService.addTrackToAutoPlaylists(
-      id,
-      extractedMetadata?.artist,
-      extractedMetadata?.album,
-    );
-
+    
     return {
       success: true,
       id,
@@ -433,7 +334,7 @@ export abstract class AudioService {
 
   static async uploadFiles(
     files: File[],
-    userId?: string,
+    userId: string,
   ): Promise<AudioModel.multiUploadResponse> {
     if (!files || files.length === 0) {
       throw status(400, "No files provided");
@@ -473,7 +374,7 @@ export abstract class AudioService {
 
   static async getAudioById(
     id: string,
-    userId?: string,
+    userId: string,
   ): Promise<AudioModel.audioFile> {
     const dbFile = await AudioRepository.findById(id, userId);
 
@@ -486,8 +387,15 @@ export abstract class AudioService {
 
   static async deleteAudio(
     id: string,
-    userId?: string,
+    userId: string,
   ): Promise<AudioModel.deleteResponse> {
+    const userAudioMap = await AudioFileUserRepository.findByAudioFileId(id);
+
+    if (userAudioMap.length > 1) {
+      await AudioFileUserRepository.deleteByAudioAndUser(id, userId);
+      return { success: true, message: "File removed from your library" };
+    }
+
     const file = await this.getAudioById(id, userId);
     const filePath = join(UPLOADS_DIR, file.filename);
 
@@ -511,7 +419,7 @@ export abstract class AudioService {
 
   static async getAudioStream(
     id: string,
-    userId?: string,
+    userId: string,
   ): Promise<{ file: AudioModel.audioFile; filePath: string }> {
     const file = await this.getAudioById(id, userId);
     const filePath = join(UPLOADS_DIR, file.filename);
@@ -525,7 +433,7 @@ export abstract class AudioService {
 
   static async getImageStream(
     id: string,
-    userId?: string,
+    userId: string,
   ): Promise<{ file: AudioModel.audioFile; imagePath: string }> {
     const file = await this.getAudioById(id, userId);
 
@@ -558,13 +466,13 @@ export abstract class AudioService {
 
   static async search(
     query: string,
-    options?: {
+    options: {
       page?: number;
       limit?: number;
-      userId?: string;
+      userId: string;
     },
   ): Promise<AudioModel.audioListResponse> {
-    const { page = 1, limit = 20, userId } = options || {};
+    const { page = 1, limit = 20, userId } = options;
 
     const { files: dbFiles, total } = await AudioRepository.search(query, {
       page,
@@ -595,12 +503,12 @@ export abstract class AudioService {
     return { suggestions };
   }
 
-  static async getRandomAudioFiles(options?: {
+  static async getRandomAudioFiles(options: {
     page?: number;
     limit?: number;
     seed?: string;
     firstTrackId?: string;
-    userId?: string;
+    userId: string;
   }): Promise<AudioModel.audioListResponse> {
     const {
       page = 1,
@@ -608,7 +516,7 @@ export abstract class AudioService {
       seed = "default-seed",
       firstTrackId,
       userId,
-    } = options || {};
+    } = options;
 
     const { files: allDbFiles } = await AudioRepository.findAll({
       page: 1,
@@ -876,12 +784,6 @@ export abstract class AudioService {
       userId,
     });
 
-    await PlaylistService.addTrackToAutoPlaylists(
-      id,
-      extractedMetadata?.artist,
-      extractedMetadata?.album,
-    );
-
     if (playlistId) {
       const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
         playlistId,
@@ -1003,6 +905,7 @@ export abstract class AudioService {
     const dbPlaylistId = await PlaylistService.findOrCreateYoutubePlaylist(
       playlistId,
       playlistTitle,
+      userId,
     );
 
     const existingPlaylist = await PlaylistRepository.findById(dbPlaylistId);

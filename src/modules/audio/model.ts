@@ -34,6 +34,7 @@ export namespace AudioModel {
     sortOrder: t.Optional(
       t.Union([t.Literal("asc"), t.Literal("desc")], { default: "desc" })
     ),
+    lastFetchedAt: t.Optional(t.Number()),
   });
   export type paginationQuery = typeof paginationQuery.static;
 
