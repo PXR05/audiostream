@@ -207,7 +207,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       return await AudioService.deleteAudio(id, auth.userId);
     },
     {
-      isAdmin: true,
+      isAuth: true,
       response: {
         200: AudioModel.deleteResponse,
         403: AudioModel.errorResponse,
