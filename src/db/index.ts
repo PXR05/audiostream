@@ -21,12 +21,6 @@ export function getDb() {
 
     if (!dbUrl) throw new Error("[DB] DATABASE_URL is not set");
 
-    logger.debug(
-      "Using connection: " + dbUrl
-        ? dbUrl.replace(/:[^:]*@/, ":***@")
-        : "undefined",
-    );
-
     pool = new Pool({
       connectionString: dbUrl,
       max: 20,
@@ -38,17 +32,11 @@ export function getDb() {
       logger.error("Unexpected error on idle client", err);
     });
 
-    pool.on("connect", () => {
-      logger.info("New client connected to database");
-    });
-
     dbInstance = drizzle(pool);
 
     pool.query("SELECT NOW()", (err, res) => {
       if (err) {
         logger.error("Database connection test failed", err);
-      } else {
-        logger.info("Database connected successfully", res.rows[0].now);
       }
     });
   }
