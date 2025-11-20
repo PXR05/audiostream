@@ -8,6 +8,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       ADMIN_USERNAME: ${ADMIN_USERNAME}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_URL: ${DATABASE_URL}
     volumes:
       - ./logs:/usr/src/app/logs:rw
       - ./uploads:/usr/src/app/uploads:rw
