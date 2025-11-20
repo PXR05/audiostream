@@ -1,6 +1,8 @@
 services:
   server:
     image: ghcr.io/pxr05/audiostream:latest
+    depends_on:
+      - db
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     environment:
@@ -11,7 +13,22 @@ services:
     volumes:
       - ./logs:/usr/src/app/logs:rw
       - ./uploads:/usr/src/app/uploads:rw
-      - ./audiostream.db:/usr/src/app/audiostream.db:rw
       # - ./cookies.txt:/usr/src/app/cookies.txt:rw # only uncomment if you have cookies.txt file in the same directory
     restart: unless-stopped
     
+  db:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: cadence
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d cadence"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

@@ -11,5 +11,19 @@ services:
     volumes:
       - ./logs:/usr/src/app/logs:rw
       - ./uploads:/usr/src/app/uploads:rw
-      - ./audiostream.db:/usr/src/app/audiostream.db:rw
     restart: unless-stopped
+    
+  db:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: cadence
+    volumes:
+      - ./database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d cadence"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
