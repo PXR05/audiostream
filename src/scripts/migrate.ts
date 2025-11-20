@@ -178,7 +178,7 @@ async function migrateSqliteToPostgres() {
 
 async function main() {
   logger.info("Running database migrations...", { context: "DB" });
-  migrate(db, { migrationsFolder: "./src/db/migrations" });
+  await migrate(db, { migrationsFolder: "./src/db/migrations" });
   logger.info("Migrations completed successfully!", { context: "DB" });
 
   await migrateSqliteToPostgres();
