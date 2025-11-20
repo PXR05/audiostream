@@ -1,46 +1,178 @@
-import { AudioRepository } from "../db/repositories";
-import { readdir, stat } from "fs/promises";
-import { join, extname } from "path";
-import { existsSync, statSync } from "fs";
-import * as mm from "music-metadata";
 import {
-  UPLOADS_DIR,
-  ALLOWED_AUDIO_EXTENSIONS,
-  ALLOWED_IMAGE_EXTENSIONS,
-  getImageFileName,
-  generateId,
-} from "../utils/helpers";
-import type { AudioModel } from "../modules/audio/model";
+  AudioRepository,
+  UserRepository,
+  PlaylistRepository,
+} from "../db/repositories";
+import { existsSync } from "fs";
 import { logger } from "../utils/logger";
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { db } from "../db";
-import { AudioService } from "../modules/audio/service";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { Database } from "bun:sqlite";
+import { eq } from "drizzle-orm";
+import * as schema from "../db/schema";
+import * as oldSchema from "../db/sqlite_schema";
 
-function extractVideoIdFromFilename(filename: string): string | null {
-  const match = filename.match(/\[([^\]]+)\][^[]*$/);
-  return match ? match[1] : null;
+const convertTimestamp = (value: any): Date => {
+  if (!value) return new Date();
+  return new Date(typeof value === "number" ? value : value);
+};
+
+async function migrateTable<T extends { id: string }>(
+  tableName: string,
+  sqliteTable: any,
+  postgresTable: any,
+  data: T[],
+  convertFn: (item: T) => any,
+  checkExistsFn: (id: string) => Promise<any>,
+  getLogName: (item: T) => string,
+) {
+  logger.info(`Migrating ${tableName} table...`, { context: "SQLITE_MIGRATE" });
+  logger.info(`Found ${data.length} ${tableName} in SQLite`, {
+    context: "SQLITE_MIGRATE",
+  });
+
+  for (const item of data) {
+    const existing = await checkExistsFn(item.id);
+    if (!existing) {
+      await db.insert(postgresTable).values(convertFn(item));
+      logger.info(`Migrated ${tableName}: ${getLogName(item)}`, {
+        context: "SQLITE_MIGRATE",
+      });
+    }
+  }
+
+  logger.info(`Successfully migrated ${data.length} ${tableName}`, {
+    context: "SQLITE_MIGRATE",
+  });
 }
 
-async function extractMetadata(
-  filePath: string,
-): Promise<AudioModel.audioMetadata | null> {
+async function migrateSqliteToPostgres() {
+  const sqliteDbPath = "audiostream.db";
+
+  if (!existsSync(sqliteDbPath)) {
+    logger.info("No SQLite database found, skipping migration", {
+      context: "SQLITE_MIGRATE",
+    });
+    return;
+  }
+
+  logger.info(
+    `Found SQLite database at ${sqliteDbPath}, starting migration...`,
+    { context: "SQLITE_MIGRATE" },
+  );
+
   try {
-    const metadata = await mm.parseFile(filePath);
-    return {
-      title: metadata.common.title,
-      artist: metadata.common.artist,
-      album: metadata.common.album,
-      year: metadata.common.year,
-      genre: metadata.common.genre,
-      duration: metadata.format.duration,
-      bitrate: metadata.format.bitrate,
-      sampleRate: metadata.format.sampleRate,
-      channels: metadata.format.numberOfChannels,
-      format: metadata.format.container,
-    };
+    const sqlite = new Database(sqliteDbPath, { readonly: true });
+    const sqliteDb = drizzle(sqlite);
+
+    const audioFilesData = await sqliteDb.select().from(oldSchema.audioFiles);
+    await migrateTable(
+      "audio_files",
+      oldSchema.audioFiles,
+      schema.audioFiles,
+      audioFilesData,
+      (audioFile) => ({
+        ...audioFile,
+        uploadedAt: convertTimestamp(audioFile.uploadedAt),
+      }),
+      (id) => AudioRepository.findById(id),
+      (item) => item.filename,
+    );
+
+    const usersData = await sqliteDb.select().from(oldSchema.users);
+    await migrateTable(
+      "users",
+      oldSchema.users,
+      schema.users,
+      usersData,
+      (user) => ({
+        ...user,
+        createdAt: convertTimestamp(user.createdAt),
+        lastLoginAt: user.lastLoginAt
+          ? convertTimestamp(user.lastLoginAt)
+          : null,
+      }),
+      (id) => UserRepository.findById(id),
+      (item) => item.username,
+    );
+
+    const audioFileUsersData = await sqliteDb
+      .select()
+      .from(oldSchema.audioFileUsers);
+    logger.info("Migrating audio_file_users table...", {
+      context: "SQLITE_MIGRATE",
+    });
+    logger.info(
+      `Found ${audioFileUsersData.length} audio_file_users in SQLite`,
+      { context: "SQLITE_MIGRATE" },
+    );
+
+    for (const audioFileUser of audioFileUsersData) {
+      const existing = await db
+        .select()
+        .from(schema.audioFileUsers)
+        .where(eq(schema.audioFileUsers.id, audioFileUser.id));
+      if (existing.length === 0) {
+        await db.insert(schema.audioFileUsers).values(audioFileUser);
+      }
+    }
+    logger.info(
+      `Successfully migrated ${audioFileUsersData.length} audio_file_users`,
+      { context: "SQLITE_MIGRATE" },
+    );
+
+    const playlistsData = await sqliteDb.select().from(oldSchema.playlists);
+    await migrateTable(
+      "playlists",
+      oldSchema.playlists,
+      schema.playlists,
+      playlistsData,
+      (playlist) => ({
+        ...playlist,
+        createdAt: convertTimestamp(playlist.createdAt),
+        updatedAt: convertTimestamp(playlist.updatedAt),
+      }),
+      (id) => PlaylistRepository.findById(id),
+      (item) => item.name,
+    );
+
+    const playlistItemsData = await sqliteDb
+      .select()
+      .from(oldSchema.playlistItems);
+    logger.info("Migrating playlist_items table...", {
+      context: "SQLITE_MIGRATE",
+    });
+    logger.info(`Found ${playlistItemsData.length} playlist_items in SQLite`, {
+      context: "SQLITE_MIGRATE",
+    });
+
+    for (const playlistItem of playlistItemsData) {
+      const existing = await db
+        .select()
+        .from(schema.playlistItems)
+        .where(eq(schema.playlistItems.id, playlistItem.id));
+      if (existing.length === 0) {
+        await db.insert(schema.playlistItems).values({
+          ...playlistItem,
+          addedAt: convertTimestamp(playlistItem.addedAt),
+        });
+      }
+    }
+    logger.info(
+      `Successfully migrated ${playlistItemsData.length} playlist_items`,
+      { context: "SQLITE_MIGRATE" },
+    );
+
+    sqlite.close();
+    logger.info("SQLite to PostgreSQL migration completed successfully!", {
+      context: "SQLITE_MIGRATE",
+    });
   } catch (error) {
-    logger.error("Metadata extraction failed", error, { context: "MIGRATE" });
-    return null;
+    logger.error("SQLite to PostgreSQL migration failed", error, {
+      context: "SQLITE_MIGRATE",
+    });
+    throw error;
   }
 }
 
@@ -49,95 +181,7 @@ async function main() {
   migrate(db, { migrationsFolder: "./src/db/migrations" });
   logger.info("Migrations completed successfully!", { context: "DB" });
 
-  logger.info("Starting migration of existing files...", {
-    context: "MIGRATE",
-  });
-
-  try {
-    const files = await readdir(UPLOADS_DIR);
-    const audioFiles = files.filter((file) =>
-      ALLOWED_AUDIO_EXTENSIONS.includes(extname(file).toLowerCase()),
-    );
-    audioFiles.sort((a, b) => {
-      const aTime = statSync(join(UPLOADS_DIR, a)).mtimeMs;
-      const bTime = statSync(join(UPLOADS_DIR, b)).mtimeMs;
-      return bTime - aTime;
-    });
-
-    logger.info(`Found ${audioFiles.length} audio files to migrate`, {
-      context: "MIGRATE",
-    });
-
-    for (const filename of audioFiles) {
-      const filePath = join(UPLOADS_DIR, filename);
-      const stats = await stat(filePath);
-
-      const videoId = extractVideoIdFromFilename(filename);
-
-      const existing =
-        (videoId && (await AudioRepository.findByYoutubeId(videoId))) ||
-        (await AudioRepository.findByFilename(filename));
-      if (existing) {
-        // logger.debug(`Skipping ${filename} - already in database`, undefined, {
-        //   context: "MIGRATE",
-        // });
-        continue;
-      }
-
-      logger.info(`Migrating ${filename}...`, { context: "MIGRATE" });
-
-      const audioId = generateId() + "_" + videoId;
-      const metadata = await extractMetadata(filePath);
-
-      const imageFiles = ALLOWED_IMAGE_EXTENSIONS.map((ext) =>
-        getImageFileName(audioId, ext),
-      );
-
-      let imageFile: string | undefined;
-      for (const imgFile of imageFiles) {
-        const imgPath = join(UPLOADS_DIR, imgFile);
-        if (existsSync(imgPath)) {
-          imageFile = imgFile;
-          break;
-        }
-      }
-
-      if (!imageFile) {
-        logger.debug(
-          `No image found for ${filename}, attempting extraction...`,
-          {
-            context: "MIGRATE",
-          },
-        );
-        const extractedImage = await AudioService.extractAlbumArt(
-          filePath,
-          audioId,
-        );
-        if (extractedImage) {
-          imageFile = extractedImage;
-          logger.debug(`✓ Extracted album art: ${extractedImage}`, {
-            context: "MIGRATE",
-          });
-        }
-      }
-
-      await AudioRepository.create(
-        AudioRepository.fromMetadata(
-          audioId,
-          filename,
-          stats.size,
-          metadata ?? undefined,
-          imageFile,
-        ),
-      );
-
-      logger.info(`✓ Migrated ${filename}`, { context: "MIGRATE" });
-    }
-
-    logger.info("Migration completed successfully!", { context: "MIGRATE" });
-  } catch (error) {
-    logger.error("Migration failed", error, { context: "MIGRATE" });
-  }
+  await migrateSqliteToPostgres();
 }
 
 export default main;

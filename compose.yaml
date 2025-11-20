@@ -14,10 +14,4 @@ services:
       - ./audiostream.db:/usr/src/app/audiostream.db:rw
       # - ./cookies.txt:/usr/src/app/cookies.txt:rw # only uncomment if you have cookies.txt file in the same directory
     restart: unless-stopped
-  # bgutil-provider:
-  #   image: brainicism/bgutil-ytdlp-pot-provider
-  #   container_name: bgutil-provider
-  #   ports:
-  #     - "4416:4416"
-  #   init: true
-  #   restart: unless-stopped
+    

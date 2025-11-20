@@ -1,1 +1,0 @@
-ALTER TABLE `audio_file_users` ADD `deleted_at` integer;

@@ -1,20 +1,22 @@
 import {
-  pgTable,
+  sqliteTable,
   text,
   integer,
   real,
   index,
-  timestamp,
-} from "drizzle-orm/pg-core";
+} from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 
-export const audioFiles = pgTable(
+export const audioFiles = sqliteTable(
   "audio_files",
   {
     id: text("id").primaryKey(),
     youtubeId: text("youtube_id"),
     filename: text("filename").notNull().unique(),
     size: integer("size").notNull(),
-    uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+    uploadedAt: integer("uploaded_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
     imageFile: text("image_file"),
     title: text("title"),
     artist: text("artist"),
@@ -34,32 +36,34 @@ export const audioFiles = pgTable(
     artistIdx: index("artist_idx").on(table.artist),
     albumIdx: index("album_idx").on(table.album),
     uploadedAtIdx: index("uploaded_at_idx").on(table.uploadedAt),
-  }),
+  })
 );
 
 export type AudioFile = typeof audioFiles.$inferSelect;
 export type NewAudioFile = typeof audioFiles.$inferInsert;
 
-export const users = pgTable(
+export const users = sqliteTable(
   "users",
   {
     id: text("id").primaryKey(),
     username: text("username").notNull().unique(),
     passwordHash: text("password_hash").notNull(),
     role: text("role").notNull().default("user"), // 'admin' or 'user'
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    lastLoginAt: timestamp("last_login_at"),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    lastLoginAt: integer("last_login_at", { mode: "timestamp" }),
   },
   (table) => ({
     usernameIdx: index("user_username_idx").on(table.username),
     createdAtIdx: index("user_created_at_idx").on(table.createdAt),
-  }),
+  })
 );
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 
-export const audioFileUsers = pgTable(
+export const audioFileUsers = sqliteTable(
   "audio_file_users",
   {
     id: text("id").primaryKey(),
@@ -72,35 +76,39 @@ export const audioFileUsers = pgTable(
   },
   (table) => ({
     audioFileIdIdx: index("audio_file_users_audio_file_id_idx").on(
-      table.audioFileId,
+      table.audioFileId
     ),
     userIdIdx: index("audio_file_users_user_id_idx").on(table.userId),
-  }),
+  })
 );
 
 export type AudioFileUser = typeof audioFileUsers.$inferSelect;
 export type NewAudioFileUser = typeof audioFileUsers.$inferInsert;
 
-export const playlists = pgTable(
+export const playlists = sqliteTable(
   "playlists",
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     userId: text("user_id").notNull(),
     coverImage: text("cover_image"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => ({
     userIdIdx: index("playlist_user_id_idx").on(table.userId),
     createdAtIdx: index("playlist_created_at_idx").on(table.createdAt),
-  }),
+  })
 );
 
 export type Playlist = typeof playlists.$inferSelect;
 export type NewPlaylist = typeof playlists.$inferInsert;
 
-export const playlistItems = pgTable(
+export const playlistItems = sqliteTable(
   "playlist_items",
   {
     id: text("id").primaryKey(),
@@ -111,16 +119,18 @@ export const playlistItems = pgTable(
       .notNull()
       .references(() => audioFiles.id, { onDelete: "cascade" }),
     position: integer("position").notNull(),
-    addedAt: timestamp("added_at").defaultNow().notNull(),
+    addedAt: integer("added_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => ({
     playlistIdIdx: index("playlist_items_playlist_id_idx").on(table.playlistId),
     audioIdIdx: index("playlist_items_audio_id_idx").on(table.audioId),
     playlistPositionIdx: index("playlist_items_playlist_position_idx").on(
       table.playlistId,
-      table.position,
+      table.position
     ),
-  }),
+  })
 );
 
 export type PlaylistItem = typeof playlistItems.$inferSelect;

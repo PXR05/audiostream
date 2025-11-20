@@ -1,82 +1,12 @@
 {
   "version": "7",
-  "dialect": "sqlite",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "6",
-      "when": 1759656193381,
-      "tag": "0000_keen_puff_adder",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1759662327499,
-      "tag": "0001_premium_mattie_franklin",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1760116949103,
-      "tag": "0002_overjoyed_blue_blade",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1760162874422,
-      "tag": "0003_fair_archangel",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1760190001374,
-      "tag": "0004_lucky_talos",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1761908373805,
-      "tag": "0005_third_tigra",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1762155818904,
-      "tag": "0006_parched_virginia_dare",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1762678056190,
-      "tag": "0007_strong_captain_midlands",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1762678122169,
-      "tag": "0008_aberrant_forge",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1763567310595,
-      "tag": "0009_lethal_shriek",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "6",
-      "when": 1763569280389,
-      "tag": "0010_windy_butterfly",
+      "version": "7",
+      "when": 1763628424589,
+      "tag": "0000_rainy_stone_men",
       "breakpoints": true
     }
   ]

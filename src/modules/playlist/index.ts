@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { PlaylistService } from "./service";
 import { PlaylistModel } from "./model";
-import { authPlugin, type AuthData } from "../../utils/auth";
+import { authPlugin } from "../../utils/auth";
 
 export const playlistController = new Elysia({
   prefix: "/playlist",
@@ -21,18 +21,11 @@ export const playlistController = new Elysia({
 
   .post(
     "/",
-    async ({ body, store }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        throw new Error("Authentication required");
-      }
-
-      const userId = storeWithAuth.auth.userId;
-
+    async ({ body, auth }) => {
       return await PlaylistService.createPlaylist(
-        userId,
+        auth.userId,
         body.name,
-        body.coverImage
+        body.coverImage,
       );
     },
     {
@@ -43,20 +36,17 @@ export const playlistController = new Elysia({
         400: PlaylistModel.errorResponse,
         413: PlaylistModel.errorResponse,
       },
-    }
+    },
   )
 
   .get(
     "/",
-    async ({ store, query }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        throw new Error("Authentication required");
-      }
-
-      const userId = storeWithAuth.auth.userId;
-
-      return await PlaylistService.getUserPlaylists(userId, query.type, query.limit);
+    async ({ auth, query }) => {
+      return await PlaylistService.getUserPlaylists(
+        auth.userId,
+        query.type,
+        query.limit,
+      );
     },
     {
       isAuth: true,
@@ -64,7 +54,7 @@ export const playlistController = new Elysia({
       response: {
         200: PlaylistModel.listResponse,
       },
-    }
+    },
   )
 
   .guard({
@@ -73,15 +63,8 @@ export const playlistController = new Elysia({
 
   .get(
     "/:id",
-    async ({ params: { id }, store }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        throw new Error("Authentication required");
-      }
-
-      const userId = storeWithAuth.auth.userId;
-
-      return await PlaylistService.getPlaylistById(id, userId);
+    async ({ params: { id }, auth }) => {
+      return await PlaylistService.getPlaylistById(id, auth.userId);
     },
     {
       isAuth: true,
@@ -90,21 +73,14 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    }
+    },
   )
 
   .get(
     "/:id/image",
-    async ({ params: { id }, set, store }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        throw new Error("Authentication required");
-      }
-
-      const userId = storeWithAuth.auth.userId;
-
+    async ({ params: { id }, set, auth }) => {
       const { playlist, imagePath } =
-        await PlaylistService.getPlaylistImageStream(id, userId);
+        await PlaylistService.getPlaylistImageStream(id, auth.userId);
 
       const ext = imagePath.split(".").pop()?.toLowerCase();
       const mimeType =
@@ -128,24 +104,17 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    }
+    },
   )
 
   .patch(
     "/:id",
-    async ({ params: { id }, body, store }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        throw new Error("Authentication required");
-      }
-
-      const userId = storeWithAuth.auth.userId;
-
+    async ({ params: { id }, body, auth }) => {
       return await PlaylistService.updatePlaylist(
         id,
-        userId,
+        auth.userId,
         body.name,
-        body.coverImage
+        body.coverImage,
       );
     },
     {
@@ -158,20 +127,13 @@ export const playlistController = new Elysia({
         404: PlaylistModel.errorResponse,
         413: PlaylistModel.errorResponse,
       },
-    }
+    },
   )
 
   .delete(
     "/:id",
-    async ({ params: { id }, store }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        throw new Error("Authentication required");
-      }
-
-      const userId = storeWithAuth.auth.userId;
-
-      return await PlaylistService.deletePlaylist(id, userId);
+    async ({ params: { id }, auth }) => {
+      return await PlaylistService.deletePlaylist(id, auth.userId);
     },
     {
       isAuth: true,
@@ -180,20 +142,13 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    }
+    },
   )
 
   .post(
     "/:id/items",
-    async ({ params: { id }, body, store }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        throw new Error("Authentication required");
-      }
-
-      const userId = storeWithAuth.auth.userId;
-
-      return await PlaylistService.addItemToPlaylist(id, userId, body.audioId);
+    async ({ params: { id }, body, auth }) => {
+      return await PlaylistService.addItemToPlaylist(id, auth.userId, body.audioId);
     },
     {
       isAuth: true,
@@ -204,7 +159,7 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    }
+    },
   )
 
   .guard({
@@ -213,15 +168,8 @@ export const playlistController = new Elysia({
 
   .delete(
     "/:id/items/:itemId",
-    async ({ params: { id, itemId }, store }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        throw new Error("Authentication required");
-      }
-
-      const userId = storeWithAuth.auth.userId;
-
-      return await PlaylistService.removeItemFromPlaylist(id, itemId, userId);
+    async ({ params: { id, itemId }, auth }) => {
+      return await PlaylistService.removeItemFromPlaylist(id, itemId, auth.userId);
     },
     {
       isAuth: true,
@@ -230,24 +178,17 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    }
+    },
   )
 
   .patch(
     "/:id/items/:itemId/position",
-    async ({ params: { id, itemId }, body, store }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        throw new Error("Authentication required");
-      }
-
-      const userId = storeWithAuth.auth.userId;
-
+    async ({ params: { id, itemId }, body, auth }) => {
       return await PlaylistService.reorderPlaylistItem(
         id,
         itemId,
-        userId,
-        body.position
+        auth.userId,
+        body.position,
       );
     },
     {
@@ -258,5 +199,5 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    }
+    },
   );

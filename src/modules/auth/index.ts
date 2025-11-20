@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { AuthService } from "./service";
-import { authPlugin, type AuthData } from "../../utils/auth";
+import { authPlugin } from "../../utils/auth";
 
 export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
   .post(
@@ -49,14 +49,8 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
 
   .get(
     "/me",
-    async ({ store, set }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        set.status = 401;
-        return { error: "Unauthorized" };
-      }
-
-      const user = await AuthService.getUserInfo(storeWithAuth.auth.userId);
+    async ({ auth, set }) => {
+      const user = await AuthService.getUserInfo(auth.userId);
       if (!user) {
         set.status = 404;
         return { error: "User not found" };
@@ -71,16 +65,10 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
 
   .post(
     "/change-password",
-    async ({ store, body, set }) => {
-      const storeWithAuth = store as typeof store & { auth?: AuthData };
-      if (!storeWithAuth.auth) {
-        set.status = 401;
-        return { error: "Unauthorized" };
-      }
-
+    async ({ body, set, auth }) => {
       try {
         await AuthService.changePassword(
-          storeWithAuth.auth.userId,
+          auth.userId,
           body.currentPassword,
           body.newPassword,
         );
