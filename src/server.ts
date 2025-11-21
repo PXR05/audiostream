@@ -25,6 +25,9 @@ const app = new Elysia()
 
     if (code === "VALIDATION") {
       set.status = 400;
+      logger.debug(`Validation error: ${errorMessage}`, {
+        context: "HTTP",
+      });
       return { error: "Validation failed", message: errorMessage };
     }
 
@@ -34,6 +37,9 @@ const app = new Elysia()
     }
 
     set.status = 500;
+    logger.error(`Internal server error: ${errorMessage}`, {
+      context: "HTTP",
+    });
     return { error: "Internal server error", message: errorMessage };
   })
   .listen({

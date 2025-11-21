@@ -109,7 +109,10 @@ export abstract class PlaylistRepository {
     return result[0];
   }
 
-  static async getItems(playlistId: string, userId: string): Promise<
+  static async getItems(
+    playlistId: string,
+    userId: string,
+  ): Promise<
     Array<{
       item: PlaylistItem;
       audio: AudioFile;
@@ -232,20 +235,24 @@ export abstract class PlaylistRepository {
 
   static async reorderAllItems(
     playlistId: string,
-    positionMap: Map<string, number>,
+    positionMap: Map<string, { audioId: string; position: number }>,
   ): Promise<void> {
-    await db.transaction(async (tx) => {
-      for (const [audioId, position] of positionMap.entries()) {
-        await tx
-          .update(playlistItems)
-          .set({ position })
-          .where(
-            and(
-              eq(playlistItems.playlistId, playlistId),
-              eq(playlistItems.audioId, audioId),
-            ),
-          );
-      }
-    });
+    const valuesToUpdate = Array.from(positionMap.entries()).map(
+      ([playlistItemId, { audioId, position }]) => ({
+        id: playlistItemId,
+        audioId,
+        playlistId,
+        position,
+      }),
+    );
+    await db
+      .insert(playlistItems)
+      .values(valuesToUpdate)
+      .onConflictDoUpdate({
+        target: [playlistItems.id],
+        set: {
+          position: sql`excluded.position`,
+        },
+      });
   }
 }

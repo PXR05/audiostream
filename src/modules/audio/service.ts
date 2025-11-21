@@ -249,7 +249,7 @@ export abstract class AudioService {
       sortBy,
       sortOrder,
       userId,
-      lastFetchedAt
+      lastFetchedAt,
     });
 
     const files = dbFiles.map((dbFile) => AudioRepository.toAudioModel(dbFile));
@@ -322,7 +322,7 @@ export abstract class AudioService {
         userId,
       });
     }
-    
+
     return {
       success: true,
       id,
@@ -627,6 +627,7 @@ export abstract class AudioService {
           });
         }
 
+        let playlistItemId;
         if (playlistId) {
           const existingItem =
             await PlaylistRepository.findItemByAudioAndPlaylist(
@@ -639,9 +640,10 @@ export abstract class AudioService {
               ? playlistIndex - 1
               : (await PlaylistRepository.getMaxPosition(playlistId)) + 1;
 
+          const newItemId = crypto.randomUUID();
           if (!existingItem) {
             await PlaylistRepository.addItem({
-              id: crypto.randomUUID(),
+              id: newItemId,
               playlistId: playlistId,
               audioId: existing.id,
               position: position,
@@ -654,12 +656,15 @@ export abstract class AudioService {
               position,
             );
           }
+
+          playlistItemId = existing ? existing.id : playlistItemId;
         }
 
         const result: AudioModel.youtubeResponse = {
           success: true,
           isExisting: true,
           id: existing.id,
+          playlistItemId,
           filename: existing.filename,
           title: existing.title || existing.filename,
           imageFile: existing.imageFile || undefined,
@@ -1001,16 +1006,28 @@ export abstract class AudioService {
       message: "Reordering playlist items...",
     });
 
-    const positionMap = new Map<string, number>();
+    const positionMap = new Map<
+      string,
+      { audioId: string; position: number }
+    >();
     for (let index = 0; index < videos.length; index++) {
       const video = videos[index];
       const result = results[index];
 
-      if (result.success && "id" in result && result.id) {
+      if (
+        result.success &&
+        "playlistItemId" in result &&
+        "id" in result &&
+        result.playlistItemId &&
+        result.id
+      ) {
         const position = video.playlist_index
           ? video.playlist_index - 1
           : index;
-        positionMap.set(result.id, position);
+        positionMap.set(result.playlistItemId, {
+          audioId: result.id,
+          position,
+        });
       }
     }
 

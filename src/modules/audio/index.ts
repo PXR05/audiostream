@@ -121,16 +121,25 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
     },
   )
 
+  .state(
+    "activeDownloads",
+    new Map<
+      string,
+      {
+        listeners: Set<(data: AudioModel.youtubeProgressEvent) => void>;
+        promise: Promise<void> | null;
+      }
+    >(),
+  )
   .get(
     "/youtube",
-    async ({ query, auth, set }) => {
-      if (!query.url) {
-        throw new Error("URL parameter is required");
-      }
-
+    async ({ query, auth, set, store }) => {
       set.headers["Content-Type"] = "text/event-stream";
       set.headers["Cache-Control"] = "no-cache";
       set.headers["Connection"] = "keep-alive";
+
+      if (store.activeDownloads === undefined)
+        store.activeDownloads = new Map();
 
       const stream = new ReadableStream({
         async start(controller) {
@@ -148,20 +157,62 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
             }
           };
 
+          let downloadInfo = store.activeDownloads.get(query.stream);
+
+          if (!downloadInfo) {
+            downloadInfo = {
+              listeners: new Set(),
+              promise: null,
+            };
+            store.activeDownloads.set(query.stream, downloadInfo);
+
+            downloadInfo.listeners.add(sendEvent);
+
+            const broadcastEvent = (data: AudioModel.youtubeProgressEvent) => {
+              const info = store.activeDownloads.get(query.stream);
+              if (info) {
+                info.listeners.forEach((listener) => listener(data));
+              }
+            };
+
+            downloadInfo.promise = AudioService.downloadYoutube(
+              query.url,
+              auth.userId,
+              broadcastEvent,
+            )
+              .then(() => {
+                setTimeout(() => {
+                  store.activeDownloads.delete(query.stream);
+                }, 1000);
+              })
+              .catch((error: any) => {
+                broadcastEvent({
+                  type: "error",
+                  message: error.message || "Download failed",
+                });
+                setTimeout(() => {
+                  store.activeDownloads.delete(query.stream);
+                }, 1000);
+              });
+          } else {
+            downloadInfo.listeners.add(sendEvent);
+          }
+
           try {
-            await AudioService.downloadYoutube(query.url, auth.userId, sendEvent);
+            await downloadInfo.promise;
             if (!isClosed) {
               controller.close();
               isClosed = true;
             }
-          } catch (error: any) {
+          } catch (error) {
             if (!isClosed) {
-              sendEvent({
-                type: "error",
-                message: error.message || "Download failed",
-              });
               controller.close();
               isClosed = true;
+            }
+          } finally {
+            const info = store.activeDownloads.get(query.stream);
+            if (info) {
+              info.listeners.delete(sendEvent);
             }
           }
         },
@@ -178,6 +229,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       isAuth: true,
       query: t.Object({
         url: t.String({ format: "uri" }),
+        stream: t.String({ format: "uuid" }),
       }),
     },
   )
@@ -220,7 +272,10 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
   .get(
     "/:id/stream",
     async ({ params: { id }, set, request, auth }) => {
-      const { file, filePath } = await AudioService.getAudioStream(id, auth.userId);
+      const { file, filePath } = await AudioService.getAudioStream(
+        id,
+        auth.userId,
+      );
 
       const bunFile = Bun.file(filePath);
       const fileSize = bunFile.size;
@@ -266,7 +321,10 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
   .get(
     "/:id/image",
     async ({ params: { id }, set, auth }) => {
-      const { file, imagePath } = await AudioService.getImageStream(id, auth.userId);
+      const { file, imagePath } = await AudioService.getImageStream(
+        id,
+        auth.userId,
+      );
 
       const ext = imagePath.split(".").pop()?.toLowerCase();
       const mimeType =

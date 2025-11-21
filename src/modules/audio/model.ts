@@ -115,6 +115,7 @@ export namespace AudioModel {
   export const youtubeResponse = t.Object({
     success: t.Boolean(),
     id: t.String(),
+    playlistItemId: t.Optional(t.String()),
     filename: t.String(),
     title: t.String(),
     imageFile: t.Optional(t.String()),
