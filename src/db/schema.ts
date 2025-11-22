@@ -5,6 +5,7 @@ import {
   real,
   index,
   timestamp,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 
 export const audioFiles = pgTable(
@@ -62,7 +63,7 @@ export type NewUser = typeof users.$inferInsert;
 export const audioFileUsers = pgTable(
   "audio_file_users",
   {
-    id: text("id").primaryKey(),
+    id: text("id"),
     audioFileId: text("audio_file_id")
       .notNull()
       .references(() => audioFiles.id, { onDelete: "cascade" }),
@@ -70,12 +71,12 @@ export const audioFileUsers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
   },
-  (table) => ({
-    audioFileIdIdx: index("audio_file_users_audio_file_id_idx").on(
-      table.audioFileId,
-    ),
-    userIdIdx: index("audio_file_users_user_id_idx").on(table.userId),
-  }),
+  (table) => [
+    primaryKey({ columns: [table.id] }),
+    primaryKey({ columns: [table.audioFileId, table.userId] }),
+    index("audio_file_users_audio_file_id_idx").on(table.audioFileId),
+    index("audio_file_users_user_id_idx").on(table.userId),
+  ],
 );
 
 export type AudioFileUser = typeof audioFileUsers.$inferSelect;
@@ -103,7 +104,7 @@ export type NewPlaylist = typeof playlists.$inferInsert;
 export const playlistItems = pgTable(
   "playlist_items",
   {
-    id: text("id").primaryKey(),
+    id: text("id"),
     playlistId: text("playlist_id")
       .notNull()
       .references(() => playlists.id, { onDelete: "cascade" }),
@@ -113,14 +114,16 @@ export const playlistItems = pgTable(
     position: integer("position").notNull(),
     addedAt: timestamp("added_at").defaultNow().notNull(),
   },
-  (table) => ({
-    playlistIdIdx: index("playlist_items_playlist_id_idx").on(table.playlistId),
-    audioIdIdx: index("playlist_items_audio_id_idx").on(table.audioId),
-    playlistPositionIdx: index("playlist_items_playlist_position_idx").on(
+  (table) => [
+    primaryKey({ columns: [table.id] }),
+    primaryKey({ columns: [table.playlistId, table.audioId] }),
+    index("playlist_items_playlist_id_idx").on(table.playlistId),
+    index("playlist_items_audio_id_idx").on(table.audioId),
+    index("playlist_items_playlist_position_idx").on(
       table.playlistId,
       table.position,
     ),
-  }),
+  ],
 );
 
 export type PlaylistItem = typeof playlistItems.$inferSelect;
