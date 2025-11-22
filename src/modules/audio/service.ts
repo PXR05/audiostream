@@ -899,6 +899,8 @@ export abstract class AudioService {
     sendEvent({
       type: "info",
       message: `Found ${videos.length} videos in playlist: ${playlistTitle}`,
+      playlistTitle,
+      playlistTotal: videos.length,
     });
 
     logger.info(
@@ -918,6 +920,8 @@ export abstract class AudioService {
     sendEvent({
       type: "info",
       message: `Starting to download ${videos.length} videos...`,
+      playlistTitle,
+      playlistTotal: videos.length,
     });
 
     logger.info(`Starting to download ${videos.length} videos one by one`, {
@@ -935,6 +939,10 @@ export abstract class AudioService {
       sendEvent({
         type: "info",
         message: `[${index + 1}/${videos.length}] Downloading: ${videoTitle}`,
+        playlistTitle,
+        playlistTotal: videos.length,
+        playlistCurrent: index + 1,
+        videoTitle,
       });
 
       logger.info(
@@ -963,6 +971,10 @@ export abstract class AudioService {
         sendEvent({
           type: "info",
           message: `✓ Completed: ${videoTitle}`,
+          playlistTitle,
+          playlistTotal: videos.length,
+          playlistCurrent: index + 1,
+          videoTitle,
         });
       } catch (error: any) {
         const errorMessage = error.message || "Unknown error occurred";
@@ -979,6 +991,10 @@ export abstract class AudioService {
         sendEvent({
           type: "info",
           message: `✗ Failed: ${videoTitle} - ${errorMessage}`,
+          playlistTitle,
+          playlistTotal: videos.length,
+          playlistCurrent: index + 1,
+          videoTitle,
         });
       }
 
@@ -1000,44 +1016,6 @@ export abstract class AudioService {
     const failedDownloads = results.filter((r) => !r.success).length;
     const totalVideos = videos.length;
     const allSuccessful = failedDownloads === 0;
-
-    sendEvent({
-      type: "info",
-      message: "Reordering playlist items...",
-    });
-
-    const positionMap = new Map<
-      string,
-      { audioId: string; position: number }
-    >();
-    for (let index = 0; index < videos.length; index++) {
-      const video = videos[index];
-      const result = results[index];
-
-      if (
-        result.success &&
-        "playlistItemId" in result &&
-        "id" in result &&
-        result.playlistItemId &&
-        result.id
-      ) {
-        const position = video.playlist_index
-          ? video.playlist_index - 1
-          : index;
-        positionMap.set(result.playlistItemId, {
-          audioId: result.id,
-          position,
-        });
-      }
-    }
-
-    if (positionMap.size > 0) {
-      await PlaylistRepository.reorderAllItems(dbPlaylistId, positionMap);
-      logger.info(
-        `Reordered ${positionMap.size} playlist items to match YouTube order`,
-        { context: "YOUTUBE" },
-      );
-    }
 
     let playlistCoverImage: string | null =
       existingPlaylist?.coverImage || null;

@@ -1,5 +1,5 @@
 {
-  "id": "68dec155-2fe5-4f72-b40a-0de41e34e5a5",
+  "id": "bc611899-6261-4369-9e38-8f712336452f",
   "prevId": "333d82ba-84de-4e3b-9e84-1d4e6fe4de20",
   "version": "7",
   "dialect": "postgresql",
@@ -11,8 +11,8 @@
         "id": {
           "name": "id",
           "type": "text",
-          "primaryKey": true,
-          "notNull": true
+          "primaryKey": false,
+          "notNull": false
         },
         "audio_file_id": {
           "name": "audio_file_id",
@@ -87,7 +87,14 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "audio_file_users_id_pk": {
+          "name": "audio_file_users_id_pk",
+          "columns": [
+            "id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -407,13 +414,6 @@
           "name": "playlist_items_id_pk",
           "columns": [
             "id"
-          ]
-        },
-        "playlist_items_playlist_id_audio_id_pk": {
-          "name": "playlist_items_playlist_id_audio_id_pk",
-          "columns": [
-            "playlist_id",
-            "audio_id"
           ]
         }
       },

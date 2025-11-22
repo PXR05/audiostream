@@ -2,6 +2,7 @@ import { type Logger } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { logger } from "../utils/logger";
+import cluster from "node:cluster";
 
 let dbInstance: ReturnType<typeof drizzle> | null = null;
 let pool: Pool | null = null;
@@ -20,6 +21,10 @@ export function getDb() {
         : process.env.DATABASE_URL_DEV;
 
     if (!dbUrl) throw new Error("[DB] DATABASE_URL is not set");
+
+    if (cluster.isPrimary) {
+      logger.debug(`Connecting to database at ${dbUrl}`);
+    }
 
     pool = new Pool({
       connectionString: dbUrl,

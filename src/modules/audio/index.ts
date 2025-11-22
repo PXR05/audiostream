@@ -138,15 +138,16 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       set.headers["Cache-Control"] = "no-cache";
       set.headers["Connection"] = "keep-alive";
 
-      if (store.activeDownloads === undefined)
+      if (store.activeDownloads === undefined) {
         store.activeDownloads = new Map();
+      }
 
       const stream = new ReadableStream({
         async start(controller) {
           const encoder = new TextEncoder();
           let isClosed = false;
 
-          const sendEvent = (data: AudioModel.youtubeProgressEvent) => {
+          function sendEvent(data: AudioModel.youtubeProgressEvent) {
             if (isClosed) return;
 
             try {
@@ -168,7 +169,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
 
             downloadInfo.listeners.add(sendEvent);
 
-            const broadcastEvent = (data: AudioModel.youtubeProgressEvent) => {
+            function broadcastEvent(data: AudioModel.youtubeProgressEvent) {
               const info = store.activeDownloads.get(query.stream);
               if (info) {
                 info.listeners.forEach((listener) => listener(data));

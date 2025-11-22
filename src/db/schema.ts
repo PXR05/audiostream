@@ -73,7 +73,6 @@ export const audioFileUsers = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.id] }),
-    primaryKey({ columns: [table.audioFileId, table.userId] }),
     index("audio_file_users_audio_file_id_idx").on(table.audioFileId),
     index("audio_file_users_user_id_idx").on(table.userId),
   ],
@@ -116,7 +115,6 @@ export const playlistItems = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.id] }),
-    primaryKey({ columns: [table.playlistId, table.audioId] }),
     index("playlist_items_playlist_id_idx").on(table.playlistId),
     index("playlist_items_audio_id_idx").on(table.audioId),
     index("playlist_items_playlist_position_idx").on(

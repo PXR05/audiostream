@@ -249,7 +249,7 @@ export abstract class PlaylistRepository {
       .insert(playlistItems)
       .values(valuesToUpdate)
       .onConflictDoUpdate({
-        target: [playlistItems.id],
+        target: [playlistItems.audioId, playlistItems.playlistId],
         set: {
           position: sql`excluded.position`,
         },
