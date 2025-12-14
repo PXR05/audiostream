@@ -64,10 +64,7 @@ export abstract class AudioRepository {
       }
 
       const userFiles = await db
-        .selectDistinct({
-          audio_files: audioFiles,
-          _orderBy: orderByColumn,
-        })
+        .selectDistinct({ audio_files: audioFiles })
         .from(audioFiles)
         .leftJoin(audioFileUsers, eq(audioFiles.id, audioFileUsers.audioFileId))
         .where(and(...whereConditions))
@@ -217,7 +214,7 @@ export abstract class AudioRepository {
             or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
           ),
         )
-        .orderBy(desc(relevanceScore))
+        .orderBy(desc(sql`_relevance`))
         .limit(limit)
         .offset(offset);
 
