@@ -30,25 +30,25 @@ export abstract class PlaylistRepository {
     let typeFilter: SQL | undefined;
     switch (type) {
       case "artist":
-        typeFilter = like(playlists.id, "%artist_%");
+        typeFilter = like(playlists.id, "artist_%");
         break;
       case "album":
-        typeFilter = like(playlists.id, "%album_%");
+        typeFilter = like(playlists.id, "album_%");
         break;
       case "youtube":
         typeFilter = like(playlists.id, "youtube_%");
         break;
       case "user":
         typeFilter = and(
-          not(like(playlists.id, "%album_%")),
-          not(like(playlists.id, "%artist_%")),
+          not(like(playlists.id, "album_%")),
+          not(like(playlists.id, "artist_%")),
           not(like(playlists.id, "youtube_%")),
         )!;
         break;
       case "auto":
         typeFilter = or(
-          like(playlists.id, "%album_%"),
-          like(playlists.id, "%artist_%"),
+          like(playlists.id, "album_%"),
+          like(playlists.id, "artist_%"),
           like(playlists.id, "youtube_%"),
         )!;
         break;

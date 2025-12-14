@@ -64,7 +64,10 @@ export abstract class AudioRepository {
       }
 
       const userFiles = await db
-        .selectDistinct({ audio_files: audioFiles })
+        .selectDistinct({
+          audio_files: audioFiles,
+          _orderBy: orderByColumn,
+        })
         .from(audioFiles)
         .leftJoin(audioFileUsers, eq(audioFiles.id, audioFileUsers.audioFileId))
         .where(and(...whereConditions))
@@ -202,7 +205,10 @@ export abstract class AudioRepository {
 
     if (userId) {
       const userFiles = await db
-        .selectDistinct({ audio_files: audioFiles })
+        .selectDistinct({
+          audio_files: audioFiles,
+          _relevance: relevanceScore,
+        })
         .from(audioFiles)
         .leftJoin(audioFileUsers, eq(audioFiles.id, audioFileUsers.audioFileId))
         .where(

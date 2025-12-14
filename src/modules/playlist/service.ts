@@ -173,7 +173,7 @@ export abstract class PlaylistService {
     const itemsData = await PlaylistRepository.getItems(playlistId, userId);
 
     const items: PlaylistModel.playlistItem[] = itemsData.map((data) => ({
-      id: data.item.id,
+      id: data.item.id!,
       position: data.item.position,
       addedAt: data.item.addedAt,
       audio: AudioRepository.toAudioModel(data.audio),
@@ -343,7 +343,7 @@ export abstract class PlaylistService {
     return {
       success: true,
       item: {
-        id: item.id,
+        id: item.id!,
         position: item.position,
         addedAt: item.addedAt,
         audio: AudioRepository.toAudioModel(audio),
