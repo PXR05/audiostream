@@ -23,6 +23,10 @@ export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
       try {
         const payload = await verifyJWT(bearer);
 
+        if (payload.exp * 1000 < Date.now()) {
+          throw new Error("Token has expired");
+        }
+
         const authData: AuthData = {
           userId: payload.userId,
           username: payload.username,
@@ -41,7 +45,7 @@ export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
     },
   },
   isAdmin: {
-    async resolve({ bearer, set, store }) {
+    async resolve({ bearer, set }) {
       if (!bearer) {
         set.status = 401;
         set.headers["WWW-Authenticate"] =
@@ -51,6 +55,10 @@ export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
 
       try {
         const payload = await verifyJWT(bearer);
+
+        if (payload.exp * 1000 < Date.now()) {
+          throw new Error("Token has expired");
+        }
 
         if (payload.role !== "admin") {
           set.status = 403;
