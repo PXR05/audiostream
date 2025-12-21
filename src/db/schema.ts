@@ -126,3 +126,25 @@ export const playlistItems = pgTable(
 
 export type PlaylistItem = typeof playlistItems.$inferSelect;
 export type NewPlaylistItem = typeof playlistItems.$inferInsert;
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    userAgent: text("user_agent"),
+    isRevoked: integer("is_revoked").default(0),
+  },
+  (table) => ({
+    userIdIdx: index("session_user_id_idx").on(table.userId),
+    expiresAtIdx: index("session_expires_at_idx").on(table.expiresAt),
+  }),
+);
+
+export type Session = typeof sessions.$inferSelect;
+export type NewSession = typeof sessions.$inferInsert;

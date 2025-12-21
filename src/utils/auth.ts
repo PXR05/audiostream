@@ -8,6 +8,7 @@ export type AuthData = {
   username: string;
   role: "admin" | "user";
   isAdmin: boolean;
+  sessionId: string;
 };
 
 export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
@@ -32,6 +33,7 @@ export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
           username: payload.username,
           role: payload.role,
           isAdmin: payload.role === "admin",
+          sessionId: payload.sessionId,
         };
 
         return { auth: authData };
@@ -72,6 +74,7 @@ export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
           username: payload.username,
           role: payload.role,
           isAdmin: true,
+          sessionId: payload.sessionId,
         };
 
         return { auth: authData };

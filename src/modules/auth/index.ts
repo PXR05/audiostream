@@ -5,9 +5,15 @@ import { authPlugin } from "../../utils/auth";
 export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
   .post(
     "/register",
-    async ({ body, set }) => {
+    async ({ body, set, request }) => {
       try {
-        const result = await AuthService.register(body.username, body.password);
+        const userAgent = request.headers.get("user-agent") ?? undefined;
+        const result = await AuthService.register(
+          body.username,
+          body.password,
+          "user",
+          userAgent,
+        );
         return result;
       } catch (error) {
         set.status = 400;
@@ -26,9 +32,14 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
 
   .post(
     "/login",
-    async ({ body, set }) => {
+    async ({ body, set, request }) => {
       try {
-        const result = await AuthService.login(body.username, body.password);
+        const userAgent = request.headers.get("user-agent") ?? undefined;
+        const result = await AuthService.login(
+          body.username,
+          body.password,
+          userAgent,
+        );
         return result;
       } catch (error) {
         set.status = 401;
@@ -41,6 +52,26 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
       body: t.Object({
         username: t.String(),
         password: t.String(),
+      }),
+    },
+  )
+
+  .post(
+    "/refresh",
+    async ({ body, set }) => {
+      try {
+        const result = await AuthService.refreshToken(body.sessionId);
+        return result;
+      } catch (error) {
+        set.status = 401;
+        return {
+          error: error instanceof Error ? error.message : "Token refresh failed",
+        };
+      }
+    },
+    {
+      body: t.Object({
+        sessionId: t.String(),
       }),
     },
   )
@@ -116,5 +147,45 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
       params: t.Object({
         id: t.String(),
       }),
+    },
+  )
+
+  .post(
+    "/logout",
+    async ({ auth, set }) => {
+      try {
+        const result = await AuthService.logout(auth.sessionId);
+        return result;
+      } catch (error) {
+        set.status = 400;
+        return {
+          error: error instanceof Error ? error.message : "Logout failed",
+        };
+      }
+    },
+    {
+      isAuth: true,
+    },
+  )
+
+  .post(
+    "/logout-all",
+    async ({ auth }) => {
+      const count = await AuthService.revokeAllSessions(auth.userId);
+      return { message: `Logged out from ${count} sessions` };
+    },
+    {
+      isAuth: true,
+    },
+  )
+
+  .get(
+    "/sessions",
+    async ({ auth }) => {
+      const sessions = await AuthService.getUserSessions(auth.userId);
+      return { data: sessions };
+    },
+    {
+      isAuth: true,
     },
   );

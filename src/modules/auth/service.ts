@@ -1,11 +1,12 @@
 import { argon2id, argon2Verify } from "hash-wasm";
-import { UserRepository } from "../../db/repositories";
+import { UserRepository, SessionRepository } from "../../db/repositories";
 import { logger } from "../../utils/logger";
 import type { AuthModel } from "./model";
 import { SignJWT, jwtVerify } from "jose";
 
 const JWT_SECRET = process.env.JWT_SECRET || "default-secret";
-const JWT_EXPIRATION = "7d";
+const JWT_EXPIRATION = "15m";
+const JWT_EXPIRATION_SECONDS = 15 * 60;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
@@ -37,6 +38,7 @@ async function generateJWT(
   userId: string,
   username: string,
   role: "admin" | "user",
+  sessionId: string,
 ): Promise<string> {
   const secret = new TextEncoder().encode(JWT_SECRET);
 
@@ -44,6 +46,7 @@ async function generateJWT(
     userId,
     username,
     role,
+    sessionId,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -62,6 +65,7 @@ export async function verifyJWT(token: string): Promise<AuthModel.JWTPayload> {
     userId: payload.userId as string,
     username: payload.username as string,
     role: payload.role as "admin" | "user",
+    sessionId: payload.sessionId as string,
     iat: payload.iat as number,
     exp: payload.exp as number,
   };
@@ -72,6 +76,7 @@ export abstract class AuthService {
     username: string,
     password: string,
     role: "admin" | "user" = "user",
+    userAgent?: string,
   ): Promise<AuthModel.RegisterResponse> {
     const existingUser = await UserRepository.findByUsername(username);
     if (existingUser) {
@@ -98,11 +103,13 @@ export abstract class AuthService {
       lastLoginAt: null,
     });
 
+    const session = await SessionRepository.create(user.id, userAgent);
+
     logger.info(`User registered: ${username} (id: ${id}, role: ${role})`, {
       context: "AUTH",
     });
 
-    const token = await generateJWT(user.id, user.username, role);
+    const token = await generateJWT(user.id, user.username, role, session.id);
 
     return {
       message: "User registered successfully",
@@ -112,12 +119,14 @@ export abstract class AuthService {
         role: user.role,
       },
       token,
+      sessionId: session.id,
     };
   }
 
   static async login(
     username: string,
     password: string,
+    userAgent?: string,
   ): Promise<AuthModel.LoginResponse> {
     const user = await UserRepository.findByUsername(username);
     if (!user) {
@@ -131,7 +140,9 @@ export abstract class AuthService {
 
     await UserRepository.updateLastLogin(user.id);
 
-    logger.info(`User logged in: ${username} (id: ${user.id})`, {
+    const session = await SessionRepository.create(user.id, userAgent);
+
+    logger.info(`User logged in: ${username} (id: ${user.id}, session: ${session.id})`, {
       context: "AUTH",
     });
 
@@ -139,6 +150,7 @@ export abstract class AuthService {
       user.id,
       user.username,
       user.role as "admin" | "user",
+      session.id,
     );
 
     return {
@@ -149,6 +161,7 @@ export abstract class AuthService {
         role: user.role,
       },
       token,
+      sessionId: session.id,
     };
   }
 
@@ -246,5 +259,72 @@ export abstract class AuthService {
     } catch (error) {
       logger.error("Failed to seed admin user", error, { context: "AUTH" });
     }
+  }
+
+  static async refreshToken(
+    sessionId: string,
+  ): Promise<AuthModel.RefreshResponse> {
+    const session = await SessionRepository.findValidById(sessionId);
+    if (!session) {
+      throw new Error("Invalid or expired session");
+    }
+
+    const user = await UserRepository.findById(session.userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    await SessionRepository.updateActivity(sessionId);
+
+    const token = await generateJWT(
+      user.id,
+      user.username,
+      user.role as "admin" | "user",
+      sessionId,
+    );
+
+    logger.info(`Token refreshed for user: ${user.username} (session: ${sessionId})`, {
+      context: "AUTH",
+    });
+
+    return {
+      token,
+      expiresIn: JWT_EXPIRATION_SECONDS,
+    };
+  }
+
+  static async logout(sessionId: string): Promise<AuthModel.LogoutResponse> {
+    const revoked = await SessionRepository.revoke(sessionId);
+    if (!revoked) {
+      throw new Error("Session not found");
+    }
+
+    logger.info(`Session revoked: ${sessionId}`, { context: "AUTH" });
+
+    return {
+      message: "Logged out successfully",
+    };
+  }
+
+  static async revokeAllSessions(userId: string): Promise<number> {
+    const count = await SessionRepository.revokeAllForUser(userId);
+    logger.info(`Revoked ${count} sessions for user: ${userId}`, {
+      context: "AUTH",
+    });
+    return count;
+  }
+
+  static async getUserSessions(userId: string): Promise<AuthModel.SessionInfo[]> {
+    const sessions = await SessionRepository.findByUserId(userId);
+    return sessions
+      .filter((s) => !s.isRevoked && s.expiresAt > new Date())
+      .map((s) => ({
+        id: s.id,
+        userId: s.userId,
+        createdAt: s.createdAt,
+        lastActivityAt: s.lastActivityAt,
+        expiresAt: s.expiresAt,
+        userAgent: s.userAgent ?? undefined,
+      }));
   }
 }

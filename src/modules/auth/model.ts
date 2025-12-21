@@ -7,6 +7,15 @@ export namespace AuthModel {
     lastLoginAt?: Date;
   }
 
+  export interface SessionInfo {
+    id: string;
+    userId: string;
+    createdAt: Date;
+    lastActivityAt: Date;
+    expiresAt: Date;
+    userAgent?: string;
+  }
+
   export interface RegisterRequest {
     username: string;
     password: string;
@@ -20,6 +29,7 @@ export namespace AuthModel {
       role: string;
     };
     token: string;
+    sessionId: string;
   }
 
   export interface LoginRequest {
@@ -35,6 +45,7 @@ export namespace AuthModel {
       role: string;
     };
     token: string;
+    sessionId: string;
   }
 
   export interface ChangePasswordRequest {
@@ -42,10 +53,24 @@ export namespace AuthModel {
     newPassword: string;
   }
 
+  export interface RefreshRequest {
+    sessionId: string;
+  }
+
+  export interface RefreshResponse {
+    token: string;
+    expiresIn: number;
+  }
+
+  export interface LogoutResponse {
+    message: string;
+  }
+
   export interface JWTPayload {
     userId: string;
     username: string;
     role: "admin" | "user";
+    sessionId: string;
     iat: number;
     exp: number;
   }
