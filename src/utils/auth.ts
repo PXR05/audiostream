@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { bearer } from "@elysiajs/bearer";
 import { logger } from "./logger";
-import { verifyJWT } from "../modules/auth/service";
+import { validateSession } from "../modules/auth/service";
 
 export type AuthData = {
   userId: string;
@@ -22,27 +22,27 @@ export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
       }
 
       try {
-        const payload = await verifyJWT(bearer);
+        const sessionData = await validateSession(bearer);
 
-        if (payload.exp * 1000 < Date.now()) {
-          throw new Error("Token has expired");
+        if (!sessionData) {
+          throw new Error("Invalid or expired session");
         }
 
         const authData: AuthData = {
-          userId: payload.userId,
-          username: payload.username,
-          role: payload.role,
-          isAdmin: payload.role === "admin",
-          sessionId: payload.sessionId,
+          userId: sessionData.userId,
+          username: sessionData.username,
+          role: sessionData.role,
+          isAdmin: sessionData.role === "admin",
+          sessionId: sessionData.sessionId,
         };
 
         return { auth: authData };
       } catch (error) {
-        logger.error("JWT verification failed", error, { context: "AUTH" });
+        logger.error("Session validation failed", error, { context: "AUTH" });
         set.status = 401;
         set.headers["WWW-Authenticate"] =
           'Bearer realm="api", error="invalid_token"';
-        throw new Error("Invalid or expired token");
+        throw new Error("Invalid or expired session");
       }
     },
   },
@@ -56,13 +56,13 @@ export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
       }
 
       try {
-        const payload = await verifyJWT(bearer);
+        const sessionData = await validateSession(bearer);
 
-        if (payload.exp * 1000 < Date.now()) {
-          throw new Error("Token has expired");
+        if (!sessionData) {
+          throw new Error("Invalid or expired session");
         }
 
-        if (payload.role !== "admin") {
+        if (sessionData.role !== "admin") {
           set.status = 403;
           set.headers["WWW-Authenticate"] =
             'Bearer realm="api", error="insufficient_scope"';
@@ -70,11 +70,11 @@ export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
         }
 
         const authData: AuthData = {
-          userId: payload.userId,
-          username: payload.username,
-          role: payload.role,
+          userId: sessionData.userId,
+          username: sessionData.username,
+          role: sessionData.role,
           isAdmin: true,
-          sessionId: payload.sessionId,
+          sessionId: sessionData.sessionId,
         };
 
         return { auth: authData };
@@ -85,11 +85,11 @@ export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
         ) {
           throw error;
         }
-        logger.error("JWT verification failed", error, { context: "AUTH" });
+        logger.error("Session validation failed", error, { context: "AUTH" });
         set.status = 401;
         set.headers["WWW-Authenticate"] =
           'Bearer realm="api", error="invalid_token"';
-        throw new Error("Invalid or expired token");
+        throw new Error("Invalid or expired session");
       }
     },
   },

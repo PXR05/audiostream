@@ -12,7 +12,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
           body.username,
           body.password,
           "user",
-          userAgent,
+          userAgent
         );
         return result;
       } catch (error) {
@@ -27,7 +27,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
         username: t.String({ minLength: 3, maxLength: 50 }),
         password: t.String({ minLength: 6 }),
       }),
-    },
+    }
   )
 
   .post(
@@ -38,7 +38,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
         const result = await AuthService.login(
           body.username,
           body.password,
-          userAgent,
+          userAgent
         );
         return result;
       } catch (error) {
@@ -53,27 +53,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
         username: t.String(),
         password: t.String(),
       }),
-    },
-  )
-
-  .post(
-    "/refresh",
-    async ({ body, set }) => {
-      try {
-        const result = await AuthService.refreshToken(body.sessionId);
-        return result;
-      } catch (error) {
-        set.status = 401;
-        return {
-          error: error instanceof Error ? error.message : "Token refresh failed",
-        };
-      }
-    },
-    {
-      body: t.Object({
-        sessionId: t.String(),
-      }),
-    },
+    }
   )
 
   .use(authPlugin)
@@ -91,7 +71,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAuth: true,
-    },
+    }
   )
 
   .post(
@@ -101,7 +81,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
         await AuthService.changePassword(
           auth.userId,
           body.currentPassword,
-          body.newPassword,
+          body.newPassword
         );
         return { message: "Password changed successfully" };
       } catch (error) {
@@ -118,7 +98,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
         currentPassword: t.String(),
         newPassword: t.String({ minLength: 6 }),
       }),
-    },
+    }
   )
 
   .get(
@@ -129,7 +109,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAdmin: true,
-    },
+    }
   )
 
   .delete(
@@ -147,7 +127,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
       params: t.Object({
         id: t.String(),
       }),
-    },
+    }
   )
 
   .post(
@@ -165,7 +145,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAuth: true,
-    },
+    }
   )
 
   .post(
@@ -176,7 +156,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAuth: true,
-    },
+    }
   )
 
   .get(
@@ -187,5 +167,5 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAuth: true,
-    },
+    }
   );

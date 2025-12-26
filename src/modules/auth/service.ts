@@ -2,11 +2,7 @@ import { argon2id, argon2Verify } from "hash-wasm";
 import { UserRepository, SessionRepository } from "../../db/repositories";
 import { logger } from "../../utils/logger";
 import type { AuthModel } from "./model";
-import { SignJWT, jwtVerify } from "jose";
 
-const JWT_SECRET = process.env.JWT_SECRET || "default-secret";
-const JWT_EXPIRATION = "15m";
-const JWT_EXPIRATION_SECONDS = 15 * 60;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
@@ -24,7 +20,7 @@ async function hashPassword(password: string): Promise<string> {
 
 async function verifyPassword(
   password: string,
-  hash: string,
+  hash: string
 ): Promise<boolean> {
   try {
     return await argon2Verify({ password, hash });
@@ -34,40 +30,26 @@ async function verifyPassword(
   }
 }
 
-async function generateJWT(
-  userId: string,
-  username: string,
-  role: "admin" | "user",
-  sessionId: string,
-): Promise<string> {
-  const secret = new TextEncoder().encode(JWT_SECRET);
+export async function validateSession(
+  sessionId: string
+): Promise<AuthModel.SessionAuthData | null> {
+  const session = await SessionRepository.findValidById(sessionId);
+  if (!session) {
+    return null;
+  }
 
-  const token = await new SignJWT({
-    userId,
-    username,
-    role,
-    sessionId,
-  })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime(JWT_EXPIRATION)
-    .sign(secret);
+  const user = await UserRepository.findById(session.userId);
+  if (!user) {
+    return null;
+  }
 
-  return token;
-}
-
-export async function verifyJWT(token: string): Promise<AuthModel.JWTPayload> {
-  const secret = new TextEncoder().encode(JWT_SECRET);
-
-  const { payload } = await jwtVerify(token, secret);
+  await SessionRepository.updateActivity(sessionId);
 
   return {
-    userId: payload.userId as string,
-    username: payload.username as string,
-    role: payload.role as "admin" | "user",
-    sessionId: payload.sessionId as string,
-    iat: payload.iat as number,
-    exp: payload.exp as number,
+    userId: user.id,
+    username: user.username,
+    role: user.role as "admin" | "user",
+    sessionId: session.id,
   };
 }
 
@@ -76,7 +58,7 @@ export abstract class AuthService {
     username: string,
     password: string,
     role: "admin" | "user" = "user",
-    userAgent?: string,
+    userAgent?: string
   ): Promise<AuthModel.RegisterResponse> {
     const existingUser = await UserRepository.findByUsername(username);
     if (existingUser) {
@@ -109,8 +91,6 @@ export abstract class AuthService {
       context: "AUTH",
     });
 
-    const token = await generateJWT(user.id, user.username, role, session.id);
-
     return {
       message: "User registered successfully",
       user: {
@@ -118,7 +98,6 @@ export abstract class AuthService {
         username: user.username,
         role: user.role,
       },
-      token,
       sessionId: session.id,
     };
   }
@@ -126,7 +105,7 @@ export abstract class AuthService {
   static async login(
     username: string,
     password: string,
-    userAgent?: string,
+    userAgent?: string
   ): Promise<AuthModel.LoginResponse> {
     const user = await UserRepository.findByUsername(username);
     if (!user) {
@@ -142,15 +121,11 @@ export abstract class AuthService {
 
     const session = await SessionRepository.create(user.id, userAgent);
 
-    logger.info(`User logged in: ${username} (id: ${user.id}, session: ${session.id})`, {
-      context: "AUTH",
-    });
-
-    const token = await generateJWT(
-      user.id,
-      user.username,
-      user.role as "admin" | "user",
-      session.id,
+    logger.info(
+      `User logged in: ${username} (id: ${user.id}, session: ${session.id})`,
+      {
+        context: "AUTH",
+      }
     );
 
     return {
@@ -160,7 +135,6 @@ export abstract class AuthService {
         username: user.username,
         role: user.role,
       },
-      token,
       sessionId: session.id,
     };
   }
@@ -168,7 +142,7 @@ export abstract class AuthService {
   static async changePassword(
     userId: string,
     currentPassword: string,
-    newPassword: string,
+    newPassword: string
   ): Promise<void> {
     const user = await UserRepository.findById(userId);
     if (!user) {
@@ -248,49 +222,17 @@ export abstract class AuthService {
       const result = await this.register(
         ADMIN_USERNAME,
         ADMIN_PASSWORD,
-        "admin",
+        "admin"
       );
 
       logger.info(
         `Default admin user '${ADMIN_USERNAME}' created successfully`,
-        { context: "AUTH" },
+        { context: "AUTH" }
       );
       logger.info(`Admin user ID: ${result.user.id}`, { context: "AUTH" });
     } catch (error) {
       logger.error("Failed to seed admin user", error, { context: "AUTH" });
     }
-  }
-
-  static async refreshToken(
-    sessionId: string,
-  ): Promise<AuthModel.RefreshResponse> {
-    const session = await SessionRepository.findValidById(sessionId);
-    if (!session) {
-      throw new Error("Invalid or expired session");
-    }
-
-    const user = await UserRepository.findById(session.userId);
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    await SessionRepository.updateActivity(sessionId);
-
-    const token = await generateJWT(
-      user.id,
-      user.username,
-      user.role as "admin" | "user",
-      sessionId,
-    );
-
-    logger.info(`Token refreshed for user: ${user.username} (session: ${sessionId})`, {
-      context: "AUTH",
-    });
-
-    return {
-      token,
-      expiresIn: JWT_EXPIRATION_SECONDS,
-    };
   }
 
   static async logout(sessionId: string): Promise<AuthModel.LogoutResponse> {
@@ -314,7 +256,9 @@ export abstract class AuthService {
     return count;
   }
 
-  static async getUserSessions(userId: string): Promise<AuthModel.SessionInfo[]> {
+  static async getUserSessions(
+    userId: string
+  ): Promise<AuthModel.SessionInfo[]> {
     const sessions = await SessionRepository.findByUserId(userId);
     return sessions
       .filter((s) => !s.isRevoked && s.expiresAt > new Date())
