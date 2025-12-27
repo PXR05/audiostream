@@ -34,6 +34,12 @@ const app = new Elysia()
   .use(cors(corsConfig))
   .use(openapi())
   .get("/", () => ({ message: ":)" }))
+  .onBeforeHandle(({ request, cookie }) => {
+    logger.info(`Incoming request: ${request.method} ${request.url}`, {
+      context: "HTTP",
+    });
+    logger.debug(`Cookies: ${JSON.stringify(cookie)}`, { context: "HTTP" });
+  })
   .use(authController)
   .use(audioController)
   .use(playlistController)
