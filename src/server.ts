@@ -9,8 +9,36 @@ import openapi from "@elysiajs/openapi";
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const HOST = process.env.HOST || "0.0.0.0";
 
+const parseCorsOrigin = (
+  origin: string | undefined
+): boolean | string | RegExp | string[] => {
+  if (!origin || origin === "true" || origin === "*") return true;
+  if (origin === "false") return false;
+
+  if (origin.includes(",")) {
+    return origin.split(",").map((o) => o.trim());
+  }
+
+  if (origin.startsWith("/") && origin.endsWith("/")) {
+    return new RegExp(origin.slice(1, -1));
+  }
+  return origin;
+};
+
+const corsConfig = {
+  origin: parseCorsOrigin(process.env.CORS_ORIGIN),
+  methods: process.env.CORS_METHODS?.split(",").map((m) => m.trim()) || "*",
+  allowedHeaders:
+    process.env.CORS_ALLOWED_HEADERS?.split(",").map((h) => h.trim()) || "*",
+  exposedHeaders:
+    process.env.CORS_EXPOSED_HEADERS?.split(",").map((h) => h.trim()) || "*",
+  credentials: process.env.CORS_CREDENTIALS !== "false",
+  maxAge: parseInt(process.env.CORS_MAX_AGE || "5", 10),
+  preflight: process.env.CORS_PREFLIGHT !== "false",
+};
+
 const app = new Elysia()
-  .use(cors())
+  .use(cors(corsConfig))
   .use(openapi())
   .get("/", () => ({ message: ":)" }))
   .use(authController)
@@ -51,7 +79,7 @@ logger.info(
   `Server running at http://${app.server?.hostname}:${app.server?.port}`,
   {
     context: "SERVER",
-  },
+  }
 );
 logger.info(`Environment: ${process.env.NODE_ENV || "development"}`, {
   context: "SERVER",
