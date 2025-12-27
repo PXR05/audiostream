@@ -28,11 +28,11 @@ export namespace AudioModel {
           t.Literal("uploadedAt"),
           t.Literal("title"),
         ],
-        { default: "uploadedAt" },
-      ),
+        { default: "uploadedAt" }
+      )
     ),
     sortOrder: t.Optional(
-      t.Union([t.Literal("asc"), t.Literal("desc")], { default: "desc" }),
+      t.Union([t.Literal("asc"), t.Literal("desc")], { default: "desc" })
     ),
     lastFetchedAt: t.Optional(t.Number()),
   });
@@ -103,7 +103,7 @@ export namespace AudioModel {
           filename: t.String(),
           error: t.String(),
         }),
-      ]),
+      ])
     ),
     totalFiles: t.Number(),
     successfulUploads: t.Number(),
@@ -137,7 +137,7 @@ export namespace AudioModel {
           title: t.String(),
           error: t.String(),
         }),
-      ]),
+      ])
     ),
     totalVideos: t.Number(),
     successfulDownloads: t.Number(),
@@ -206,7 +206,7 @@ export namespace AudioModel {
         eta: t.Optional(t.String()),
         downloaded: t.Optional(t.String()),
         totalSize: t.Optional(t.String()),
-      }),
+      })
     ),
     playlistTitle: t.Optional(t.String()),
     playlistTotal: t.Optional(t.Number()),
@@ -215,4 +215,20 @@ export namespace AudioModel {
     result: t.Optional(t.Union([youtubeResponse, youtubePlaylistResponse])),
   });
   export type youtubeProgressEvent = typeof youtubeProgressEvent.static;
+
+  export const youtubeSearchQuery = t.Object({
+    q: t.String({ minLength: 1 }),
+  });
+  export type youtubeSearchQuery = typeof youtubeSearchQuery.static;
+
+  export const youtubeSearchResult = t.Object({
+    videoId: t.String(),
+    title: t.String(),
+    artist: t.String(),
+    thumbnail: t.String(),
+  });
+  export type youtubeSearchResult = typeof youtubeSearchResult.static;
+
+  export const youtubeSearchResponse = t.Array(youtubeSearchResult);
+  export type youtubeSearchResponse = typeof youtubeSearchResponse.static;
 }

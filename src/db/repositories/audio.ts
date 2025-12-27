@@ -5,7 +5,7 @@ import {
   type AudioFile,
   audioFileUsers,
 } from "../schema";
-import { eq, asc, desc, sql, or, like, count, and, gt } from "drizzle-orm";
+import { eq, asc, desc, sql, or, ilike, count, and, gt } from "drizzle-orm";
 import type { AudioModel } from "../../modules/audio/model";
 
 export abstract class AudioRepository {
@@ -59,7 +59,7 @@ export abstract class AudioRepository {
 
       if (options?.lastFetchedAt) {
         whereConditions.push(
-          gt(audioFiles.uploadedAt, new Date(options.lastFetchedAt)),
+          gt(audioFiles.uploadedAt, new Date(options.lastFetchedAt))
         );
       }
 
@@ -99,7 +99,7 @@ export abstract class AudioRepository {
 
   static async findById(
     id: string,
-    userId?: string,
+    userId?: string
   ): Promise<AudioFile | null> {
     if (userId) {
       const result = await db
@@ -109,8 +109,8 @@ export abstract class AudioRepository {
         .where(
           and(
             eq(audioFiles.id, id),
-            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
-          ),
+            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1))
+          )
         );
 
       return result[0]?.audio_files ?? null;
@@ -141,7 +141,7 @@ export abstract class AudioRepository {
 
   static async update(
     id: string,
-    data: Partial<NewAudioFile>,
+    data: Partial<NewAudioFile>
   ): Promise<AudioFile | null> {
     const result = await db
       .update(audioFiles)
@@ -165,44 +165,46 @@ export abstract class AudioRepository {
       page?: number;
       limit?: number;
       userId: string;
-    },
+    }
   ): Promise<{ files: AudioFile[]; total: number }> {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 20;
     const offset = (page - 1) * limit;
     const userId = options?.userId;
     const searchPattern = `%${query}%`;
-    const startsWithPattern = `${query}%`;
+    const lowerStartsWithPattern = `${query.toLowerCase()}%`;
     const lowerQuery = query.toLowerCase();
+    const fuzzyThreshold = 0.3;
 
-    const relevanceScore = sql<number>`
-      CASE
-        WHEN LOWER(${audioFiles.title}) = ${lowerQuery} THEN 4000
-        WHEN LOWER(${audioFiles.artist}) = ${lowerQuery} THEN 3000
-        WHEN LOWER(${audioFiles.album}) = ${lowerQuery} THEN 2000
-        WHEN LOWER(${audioFiles.filename}) = ${lowerQuery} THEN 1000
-        WHEN LOWER(${audioFiles.title}) LIKE ${startsWithPattern} THEN 400
-        WHEN LOWER(${audioFiles.artist}) LIKE ${startsWithPattern} THEN 300
-        WHEN LOWER(${audioFiles.album}) LIKE ${startsWithPattern} THEN 200
-        WHEN LOWER(${audioFiles.filename}) LIKE ${startsWithPattern} THEN 100
-        WHEN ${audioFiles.title} LIKE ${searchPattern} THEN 40
-        WHEN ${audioFiles.artist} LIKE ${searchPattern} THEN 30
-        WHEN ${audioFiles.album} LIKE ${searchPattern} THEN 20
-        WHEN ${audioFiles.filename} LIKE ${searchPattern} THEN 10
-        ELSE 0
-      END
-    `;
+    const relevanceScore = sql<number>`(
+      (CASE WHEN LOWER(${audioFiles.title}) = ${lowerQuery} THEN 150 ELSE 0 END) +
+      (CASE WHEN LOWER(${audioFiles.artist}) = ${lowerQuery} THEN 120 ELSE 0 END) +
+      (CASE WHEN LOWER(${audioFiles.album}) = ${lowerQuery} THEN 100 ELSE 0 END) +
+      (CASE WHEN LOWER(${audioFiles.title}) LIKE ${lowerStartsWithPattern} AND LOWER(${audioFiles.title}) != ${lowerQuery} THEN 30 ELSE 0 END) +
+      (CASE WHEN LOWER(${audioFiles.artist}) LIKE ${lowerStartsWithPattern} AND LOWER(${audioFiles.artist}) != ${lowerQuery} THEN 24 ELSE 0 END) +
+      (CASE WHEN LOWER(${audioFiles.album}) LIKE ${lowerStartsWithPattern} AND LOWER(${audioFiles.album}) != ${lowerQuery} THEN 20 ELSE 0 END) +
+      (CASE WHEN ${audioFiles.title} ILIKE ${searchPattern} AND LOWER(${audioFiles.title}) NOT LIKE ${lowerStartsWithPattern} THEN 6 ELSE 0 END) +
+      (CASE WHEN ${audioFiles.artist} ILIKE ${searchPattern} AND LOWER(${audioFiles.artist}) NOT LIKE ${lowerStartsWithPattern} THEN 5 ELSE 0 END) +
+      (CASE WHEN ${audioFiles.album} ILIKE ${searchPattern} AND LOWER(${audioFiles.album}) NOT LIKE ${lowerStartsWithPattern} THEN 4 ELSE 0 END) +
+      (COALESCE(word_similarity(${lowerQuery}, LOWER(${audioFiles.title})), 0) * 15) +
+      (COALESCE(word_similarity(${lowerQuery}, LOWER(${audioFiles.artist})), 0) * 12) +
+      (COALESCE(word_similarity(${lowerQuery}, LOWER(${audioFiles.album})), 0) * 10)
+    )`;
 
-    const searchCondition = or(
-      like(audioFiles.title, searchPattern),
-      like(audioFiles.artist, searchPattern),
-      like(audioFiles.album, searchPattern),
-      like(audioFiles.filename, searchPattern),
-    );
+    const searchCondition = sql`(
+      ${audioFiles.title} ILIKE ${searchPattern} OR
+      ${audioFiles.artist} ILIKE ${searchPattern} OR
+      ${audioFiles.album} ILIKE ${searchPattern} OR
+      word_similarity(${lowerQuery}, LOWER(COALESCE(${audioFiles.title}, ''))) > ${fuzzyThreshold} OR
+      word_similarity(${lowerQuery}, LOWER(COALESCE(${audioFiles.artist}, ''))) > ${fuzzyThreshold} OR
+      word_similarity(${lowerQuery}, LOWER(COALESCE(${audioFiles.album}, ''))) > ${fuzzyThreshold}
+    )`;
+
+    await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
 
     if (userId) {
       const userFiles = await db
-        .selectDistinct({
+        .select({
           audio_files: audioFiles,
           _relevance: relevanceScore,
         })
@@ -211,23 +213,25 @@ export abstract class AudioRepository {
         .where(
           and(
             searchCondition,
-            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
-          ),
+            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1))
+          )
         )
-        .orderBy(desc(sql`_relevance`))
+        .groupBy(audioFiles.id)
+        .orderBy(desc(relevanceScore))
         .limit(limit)
         .offset(offset);
 
       const countResult = await db
-        .selectDistinct({ audio_files: audioFiles })
+        .select({ count: count() })
         .from(audioFiles)
         .leftJoin(audioFileUsers, eq(audioFiles.id, audioFileUsers.audioFileId))
         .where(
           and(
             searchCondition,
-            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
-          ),
-        );
+            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1))
+          )
+        )
+        .groupBy(audioFiles.id);
 
       return {
         files: userFiles.map((f) => f.audio_files),
@@ -255,7 +259,7 @@ export abstract class AudioRepository {
 
   static async searchSuggestions(
     query: string,
-    limit: number = 5,
+    limit: number = 5
   ): Promise<AudioModel.searchSuggestion[]> {
     const searchPattern = `%${query}%`;
     const startsWithPattern = `${query}%`;
@@ -274,7 +278,7 @@ export abstract class AudioRepository {
         `.as("score"),
       })
       .from(audioFiles)
-      .where(like(audioFiles.title, searchPattern));
+      .where(ilike(audioFiles.title, searchPattern));
 
     const artistQuery = db
       .selectDistinct({
@@ -289,7 +293,7 @@ export abstract class AudioRepository {
         `.as("score"),
       })
       .from(audioFiles)
-      .where(like(audioFiles.artist, searchPattern));
+      .where(ilike(audioFiles.artist, searchPattern));
 
     const albumQuery = db
       .selectDistinct({
@@ -304,7 +308,7 @@ export abstract class AudioRepository {
         `.as("score"),
       })
       .from(audioFiles)
-      .where(like(audioFiles.album, searchPattern));
+      .where(ilike(audioFiles.album, searchPattern));
 
     const results = await titleQuery
       .unionAll(artistQuery)
@@ -359,7 +363,7 @@ export abstract class AudioRepository {
     size: number,
     metadata?: AudioModel.audioMetadata,
     imageFile?: string,
-    youtubeId?: string,
+    youtubeId?: string
   ): NewAudioFile {
     return {
       id,

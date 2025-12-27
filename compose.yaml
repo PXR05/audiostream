@@ -14,6 +14,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       CORS_ORIGIN: ${CORS_ORIGIN:-true}
       CORS_CREDENTIALS: ${CORS_CREDENTIALS:-true}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
     volumes:
       - ./logs:/usr/src/app/logs:rw
       - ./uploads:/usr/src/app/uploads:rw
