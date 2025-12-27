@@ -5,6 +5,7 @@ import { authController } from "./modules/auth";
 import { playlistController } from "./modules/playlist";
 import { logger } from "./utils/logger";
 import openapi from "@elysiajs/openapi";
+import { authPlugin } from "./utils/auth";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -34,12 +35,7 @@ const app = new Elysia()
   .use(cors(corsConfig))
   .use(openapi())
   .get("/", () => ({ message: ":)" }))
-  .onBeforeHandle(({ request, cookie }) => {
-    logger.info(`Incoming request: ${request.method} ${request.url}`, {
-      context: "HTTP",
-    });
-    logger.debug(`Cookies: ${JSON.stringify(cookie)}`, { context: "HTTP" });
-  })
+  .use(authPlugin)
   .use(authController)
   .use(audioController)
   .use(playlistController)
