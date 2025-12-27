@@ -25,6 +25,10 @@ export const getSessionCookieOptions = (sessionId: string) => ({
 export const authPlugin = new Elysia({ name: "auth" }).macro({
   isAuth: {
     async resolve({ set, cookie }) {
+      logger.debug("Authenticating request | " + JSON.stringify(cookie), {
+        context: "AUTH",
+      });
+
       const sessionId = cookie[SESSION_COOKIE_NAME].cookie.value;
 
       if (

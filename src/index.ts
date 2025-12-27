@@ -7,7 +7,7 @@ import { UPLOADS_DIR } from "./utils/helpers";
 import { logger } from "./utils/logger";
 import { AuthService } from "./modules/auth/service";
 
-if (cluster.isPrimary) {
+if (cluster.isPrimary && process.env.NODE_ENV === "production") {
   try {
     await mkdir(UPLOADS_DIR, { recursive: true });
     logger.info(`Uploads directory ready: ${UPLOADS_DIR}`, {
