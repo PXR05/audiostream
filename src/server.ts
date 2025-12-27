@@ -27,14 +27,7 @@ const parseCorsOrigin = (
 
 const corsConfig = {
   origin: parseCorsOrigin(process.env.CORS_ORIGIN),
-  methods: process.env.CORS_METHODS?.split(",").map((m) => m.trim()) || "*",
-  allowedHeaders:
-    process.env.CORS_ALLOWED_HEADERS?.split(",").map((h) => h.trim()) || "*",
-  exposedHeaders:
-    process.env.CORS_EXPOSED_HEADERS?.split(",").map((h) => h.trim()) || "*",
   credentials: process.env.CORS_CREDENTIALS !== "false",
-  maxAge: parseInt(process.env.CORS_MAX_AGE || "5", 10),
-  preflight: process.env.CORS_PREFLIGHT !== "false",
 };
 
 const app = new Elysia()

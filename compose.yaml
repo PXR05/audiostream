@@ -13,12 +13,7 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
       DATABASE_URL: ${DATABASE_URL}
       CORS_ORIGIN: ${CORS_ORIGIN:-true}
-      CORS_METHODS: ${CORS_METHODS:-*}
-      CORS_ALLOWED_HEADERS: ${CORS_ALLOWED_HEADERS:-*}
-      CORS_EXPOSED_HEADERS: ${CORS_EXPOSED_HEADERS:-*}
       CORS_CREDENTIALS: ${CORS_CREDENTIALS:-true}
-      CORS_MAX_AGE: ${CORS_MAX_AGE:-5}
-      CORS_PREFLIGHT: ${CORS_PREFLIGHT:-true}
     volumes:
       - ./logs:/usr/src/app/logs:rw
       - ./uploads:/usr/src/app/uploads:rw
