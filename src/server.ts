@@ -35,6 +35,7 @@ const app = new Elysia()
   .use(openapi())
   .get("/", () => ({ message: ":)" }))
   .onBeforeHandle(({ request, cookie }) => {
+    if (process.env.NODE_ENV === "production") return;
     logger.info(
       `${request.method} request: ${request.url} | Cookies: ${JSON.stringify(cookie)}`,
       {
