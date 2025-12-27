@@ -13,11 +13,11 @@ COPY ./src ./src
 ENV NODE_ENV=production
 
 RUN bun build \
-    --minify-whitespace \
-    --minify-syntax \
-    --target bun \
-    --outfile server.js \
-    src/index.ts
+--minify-whitespace \
+--minify-syntax \
+--target bun \
+--outfile server.js \
+src/index.ts
 
 FROM oven/bun:slim AS production
 
@@ -35,6 +35,8 @@ RUN chmod a+rx /usr/bin/yt-dlp
 
 COPY --from=build /app/server.js ./server.js
 COPY --from=build /app/src/db/migrations ./src/db/migrations
+
+ENV NODE_ENV=production
 
 CMD ["bun", "run", "server.js"]
 
