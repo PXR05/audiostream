@@ -1,11 +1,23 @@
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import { AuthService } from "./service";
-import { authPlugin } from "../../utils/auth";
+import { AuthModel } from "./model";
+import {
+  authPlugin,
+  SESSION_COOKIE_NAME,
+  getSessionCookieOptions,
+} from "../../utils/auth";
 
 export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
+  .model({
+    "auth.register": AuthModel.registerBody,
+    "auth.login": AuthModel.loginBody,
+    "auth.changePassword": AuthModel.changePasswordBody,
+    "auth.userParams": AuthModel.userParams,
+  })
+
   .post(
     "/register",
-    async ({ body, set, request }) => {
+    async ({ body, set, request, cookie }) => {
       try {
         const userAgent = request.headers.get("user-agent") ?? undefined;
         const result = await AuthService.register(
@@ -14,7 +26,15 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
           "user",
           userAgent
         );
-        return result;
+
+        cookie[SESSION_COOKIE_NAME].set(
+          getSessionCookieOptions(result.sessionId)
+        );
+
+        return {
+          message: result.message,
+          user: result.user,
+        };
       } catch (error) {
         set.status = 400;
         return {
@@ -23,16 +43,17 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
       }
     },
     {
-      body: t.Object({
-        username: t.String({ minLength: 3, maxLength: 50 }),
-        password: t.String({ minLength: 6 }),
-      }),
+      body: "auth.register",
+      response: {
+        200: AuthModel.authResponse,
+        400: AuthModel.errorResponse,
+      },
     }
   )
 
   .post(
     "/login",
-    async ({ body, set, request }) => {
+    async ({ body, set, request, cookie }) => {
       try {
         const userAgent = request.headers.get("user-agent") ?? undefined;
         const result = await AuthService.login(
@@ -40,7 +61,15 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
           body.password,
           userAgent
         );
-        return result;
+
+        cookie[SESSION_COOKIE_NAME].set(
+          getSessionCookieOptions(result.sessionId)
+        );
+
+        return {
+          message: result.message,
+          user: result.user,
+        };
       } catch (error) {
         set.status = 401;
         return {
@@ -49,10 +78,11 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
       }
     },
     {
-      body: t.Object({
-        username: t.String(),
-        password: t.String(),
-      }),
+      body: "auth.login",
+      response: {
+        200: AuthModel.authResponse,
+        401: AuthModel.errorResponse,
+      },
     }
   )
 
@@ -71,6 +101,10 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAuth: true,
+      response: {
+        200: AuthModel.meResponse,
+        404: AuthModel.errorResponse,
+      },
     }
   )
 
@@ -94,10 +128,11 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAuth: true,
-      body: t.Object({
-        currentPassword: t.String(),
-        newPassword: t.String({ minLength: 6 }),
-      }),
+      body: "auth.changePassword",
+      response: {
+        200: AuthModel.messageResponse,
+        400: AuthModel.errorResponse,
+      },
     }
   )
 
@@ -109,6 +144,9 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAdmin: true,
+      response: {
+        200: AuthModel.usersListResponse,
+      },
     }
   )
 
@@ -124,9 +162,11 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAdmin: true,
-      params: t.Object({
-        id: t.String(),
-      }),
+      params: "auth.userParams",
+      response: {
+        200: AuthModel.messageResponse,
+        404: AuthModel.errorResponse,
+      },
     }
   )
 
@@ -145,6 +185,10 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAuth: true,
+      response: {
+        200: AuthModel.messageResponse,
+        400: AuthModel.errorResponse,
+      },
     }
   )
 
@@ -156,6 +200,9 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAuth: true,
+      response: {
+        200: AuthModel.messageResponse,
+      },
     }
   )
 
@@ -167,5 +214,8 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
     },
     {
       isAuth: true,
+      response: {
+        200: AuthModel.sessionsListResponse,
+      },
     }
   );

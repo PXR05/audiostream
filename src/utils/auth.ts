@@ -1,5 +1,4 @@
 import { Elysia } from "elysia";
-import { bearer } from "@elysiajs/bearer";
 import { logger } from "./logger";
 import { validateSession } from "../modules/auth/service";
 
@@ -11,18 +10,36 @@ export type AuthData = {
   sessionId: string;
 };
 
-export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
+export const SESSION_COOKIE_NAME = "auth_session";
+export const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+
+export const getSessionCookieOptions = (sessionId: string) => ({
+  value: sessionId,
+  httpOnly: true,
+  secure: true,
+  sameSite: "none" as const,
+  path: "/",
+  maxAge: SESSION_COOKIE_MAX_AGE,
+});
+
+export const authPlugin = new Elysia({ name: "auth" }).macro({
   isAuth: {
-    async resolve({ bearer, set }) {
-      if (!bearer) {
+    async resolve({ set, cookie }) {
+      const sessionId = cookie[SESSION_COOKIE_NAME].cookie.value;
+
+      if (
+        !sessionId ||
+        typeof sessionId !== "string" ||
+        sessionId.length === 0
+      ) {
         set.status = 401;
         set.headers["WWW-Authenticate"] =
           'Bearer realm="api", error="invalid_request"';
-        throw new Error("Authorization header required");
+        throw new Error("Session cookie required");
       }
 
       try {
-        const sessionData = await validateSession(bearer);
+        const sessionData = await validateSession(sessionId);
 
         if (!sessionData) {
           throw new Error("Invalid or expired session");
@@ -47,16 +64,22 @@ export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
     },
   },
   isAdmin: {
-    async resolve({ bearer, set }) {
-      if (!bearer) {
+    async resolve({ set, cookie }) {
+      const sessionId = cookie[SESSION_COOKIE_NAME].cookie.value;
+
+      if (
+        !sessionId ||
+        typeof sessionId !== "string" ||
+        sessionId.length === 0
+      ) {
         set.status = 401;
         set.headers["WWW-Authenticate"] =
           'Bearer realm="api", error="invalid_request"';
-        throw new Error("Authorization header required");
+        throw new Error("Session cookie required");
       }
 
       try {
-        const sessionData = await validateSession(bearer);
+        const sessionData = await validateSession(sessionId);
 
         if (!sessionData) {
           throw new Error("Invalid or expired session");
