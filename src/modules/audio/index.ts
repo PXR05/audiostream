@@ -353,6 +353,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
               ? "image/webp"
               : "image/jpeg";
 
+      set.headers["cache-control"] = "public, max-age=31536000, immutable";
       set.headers["content-type"] = mimeType;
       set.headers["content-disposition"] =
         `inline; filename="${file.imageFile}"`;

@@ -92,6 +92,7 @@ export const playlistController = new Elysia({
               ? "image/webp"
               : "image/jpeg";
 
+      set.headers["cache-control"] = "private, max-age=604800, stale-while-revalidate=86400";
       set.headers["content-type"] = mimeType;
       set.headers["content-disposition"] =
         `inline; filename="${playlist.coverImage}"`;
