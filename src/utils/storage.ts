@@ -15,6 +15,8 @@ const S3_ACCESS_KEY = process.env.S3_ACCESS_KEY || "rustfsadmin";
 const S3_SECRET_KEY = process.env.S3_SECRET_KEY || "rustfsadmin";
 const S3_BUCKET = process.env.S3_BUCKET || "audiostream";
 
+logger.info(`Using S3 endpoint: ${S3_ENDPOINT}`, { context: "STORAGE" });
+
 const s3Client = new S3Client({
   endpoint: S3_ENDPOINT,
   region: "us-east-1",
@@ -42,7 +44,7 @@ export abstract class Storage {
         logger.info(`Bucket '${S3_BUCKET}' created`, { context: "STORAGE" });
       } else {
         logger.error(
-          "Failed to create bucket: " + S3_BUCKET + " " + error.message,
+          "Failed to create bucket: " + S3_BUCKET + " " + JSON.stringify(error),
           error,
           {
             context: "STORAGE",
