@@ -1,10 +1,10 @@
 import { status } from "elysia";
-import { existsSync, unlinkSync } from "fs";
-import { join, extname } from "path";
+import { extname } from "path";
 import type { PlaylistModel } from "./model";
 import { PlaylistRepository, AudioRepository } from "../../db/repositories";
-import { generateId, UPLOADS_DIR } from "../../utils/helpers";
+import { generateId } from "../../utils/helpers";
 import { logger } from "../../utils/logger";
+import { Storage } from "../../utils/storage";
 
 const ALLOWED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
@@ -33,7 +33,7 @@ export abstract class PlaylistService {
   static async findOrCreateYoutubePlaylist(
     youtubePlaylistId: string,
     playlistTitle: string,
-    userId: string,
+    userId: string
   ): Promise<string> {
     const playlistId = `youtube_${youtubePlaylistId}`;
 
@@ -64,7 +64,7 @@ export abstract class PlaylistService {
   static async createPlaylist(
     userId: string,
     name: string,
-    coverImage?: File,
+    coverImage?: File
   ): Promise<PlaylistModel.createResponse> {
     let coverImageFile: string | undefined;
 
@@ -72,7 +72,7 @@ export abstract class PlaylistService {
       if (coverImage.size > MAX_IMAGE_SIZE) {
         throw status(
           413,
-          `Image too large. Maximum size: ${MAX_IMAGE_SIZE / (1024 * 1024)}MB`,
+          `Image too large. Maximum size: ${MAX_IMAGE_SIZE / (1024 * 1024)}MB`
         );
       }
 
@@ -80,18 +80,19 @@ export abstract class PlaylistService {
       if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
         throw status(
           400,
-          `Invalid image format. Allowed: ${ALLOWED_IMAGE_EXTENSIONS.join(", ")}`,
+          `Invalid image format. Allowed: ${ALLOWED_IMAGE_EXTENSIONS.join(", ")}`
         );
       }
 
       const id = generateId();
       coverImageFile = `playlist_${id}${ext}`;
-      const filePath = join(UPLOADS_DIR, coverImageFile);
 
       try {
-        await Bun.write(filePath, coverImage);
+        const data = await coverImage.arrayBuffer();
+        const contentType = this.getImageContentType(ext);
+        await Storage.upload(coverImageFile, new Uint8Array(data), contentType);
       } catch (error) {
-        logger.error("Failed to write cover image", error, {
+        logger.error("Failed to upload cover image", error, {
           context: "PLAYLIST",
         });
         throw status(500, "Failed to save cover image");
@@ -130,12 +131,12 @@ export abstract class PlaylistService {
   static async getUserPlaylists(
     userId: string,
     type?: "artist" | "album" | "user" | "auto" | "youtube",
-    limit?: number,
+    limit?: number
   ): Promise<PlaylistModel.listResponse> {
     const playlists = await PlaylistRepository.findByUserId(
       userId,
       type,
-      limit,
+      limit
     );
 
     const playlistsWithCount = await Promise.all(
@@ -150,7 +151,7 @@ export abstract class PlaylistService {
           updatedAt: playlist.updatedAt,
           itemCount: items.length,
         };
-      }),
+      })
     );
 
     return { playlists: playlistsWithCount };
@@ -158,7 +159,7 @@ export abstract class PlaylistService {
 
   static async getPlaylistById(
     playlistId: string,
-    userId: string,
+    userId: string
   ): Promise<PlaylistModel.detailResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -196,7 +197,7 @@ export abstract class PlaylistService {
     playlistId: string,
     userId: string,
     name?: string,
-    coverImage?: File,
+    coverImage?: File
   ): Promise<PlaylistModel.updateResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -214,7 +215,7 @@ export abstract class PlaylistService {
       if (coverImage.size > MAX_IMAGE_SIZE) {
         throw status(
           413,
-          `Image too large. Maximum size: ${MAX_IMAGE_SIZE / (1024 * 1024)}MB`,
+          `Image too large. Maximum size: ${MAX_IMAGE_SIZE / (1024 * 1024)}MB`
         );
       }
 
@@ -222,24 +223,26 @@ export abstract class PlaylistService {
       if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
         throw status(
           400,
-          `Invalid image format. Allowed: ${ALLOWED_IMAGE_EXTENSIONS.join(", ")}`,
+          `Invalid image format. Allowed: ${ALLOWED_IMAGE_EXTENSIONS.join(", ")}`
         );
       }
 
       if (playlist.coverImage) {
-        const oldImagePath = join(UPLOADS_DIR, playlist.coverImage);
-        if (existsSync(oldImagePath)) {
-          unlinkSync(oldImagePath);
+        try {
+          await Storage.delete(playlist.coverImage);
+        } catch {
+          // Ignore if old image doesn't exist
         }
       }
 
       coverImageFile = `playlist_${playlistId}${ext}`;
-      const filePath = join(UPLOADS_DIR, coverImageFile);
 
       try {
-        await Bun.write(filePath, coverImage);
+        const data = await coverImage.arrayBuffer();
+        const contentType = this.getImageContentType(ext);
+        await Storage.upload(coverImageFile, new Uint8Array(data), contentType);
       } catch (error) {
-        logger.error("Failed to write cover image", error, {
+        logger.error("Failed to upload cover image", error, {
           context: "PLAYLIST",
         });
         throw status(500, "Failed to save cover image");
@@ -274,7 +277,7 @@ export abstract class PlaylistService {
 
   static async deletePlaylist(
     playlistId: string,
-    userId: string,
+    userId: string
   ): Promise<PlaylistModel.deleteResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -287,9 +290,10 @@ export abstract class PlaylistService {
     }
 
     if (playlist.coverImage) {
-      const imagePath = join(UPLOADS_DIR, playlist.coverImage);
-      if (existsSync(imagePath)) {
-        unlinkSync(imagePath);
+      try {
+        await Storage.delete(playlist.coverImage);
+      } catch {
+        // Ignore if image doesn't exist
       }
     }
 
@@ -303,7 +307,7 @@ export abstract class PlaylistService {
   static async addItemToPlaylist(
     playlistId: string,
     userId: string,
-    audioId: string,
+    audioId: string
   ): Promise<PlaylistModel.addItemResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -322,7 +326,7 @@ export abstract class PlaylistService {
 
     const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
       playlistId,
-      audioId,
+      audioId
     );
 
     if (existingItem) {
@@ -355,7 +359,7 @@ export abstract class PlaylistService {
   static async removeItemFromPlaylist(
     playlistId: string,
     itemId: string,
-    userId: string,
+    userId: string
   ): Promise<PlaylistModel.removeItemResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -380,7 +384,7 @@ export abstract class PlaylistService {
     playlistId: string,
     itemId: string,
     userId: string,
-    newPosition: number,
+    newPosition: number
   ): Promise<PlaylistModel.removeItemResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -397,10 +401,10 @@ export abstract class PlaylistService {
     return { success: true, message: "Item reordered successfully" };
   }
 
-  static async getPlaylistImageStream(
+  static async getPlaylistImageData(
     playlistId: string,
-    userId: string,
-  ): Promise<{ playlist: any; imagePath: string }> {
+    userId: string
+  ): Promise<{ playlist: any; data: Buffer; contentType: string }> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
     if (!playlist) {
@@ -415,12 +419,26 @@ export abstract class PlaylistService {
       throw status(404, "No cover image found for this playlist");
     }
 
-    const imagePath = join(UPLOADS_DIR, playlist.coverImage);
-
-    if (!existsSync(imagePath)) {
-      throw status(404, "Cover image file not found on disk");
+    const exists = await Storage.exists(playlist.coverImage);
+    if (!exists) {
+      throw status(404, "Cover image not found in storage");
     }
 
-    return { playlist, imagePath };
+    const data = await Storage.download(playlist.coverImage);
+    const ext = extname(playlist.coverImage).toLowerCase();
+    const contentType = this.getImageContentType(ext);
+
+    return { playlist, data, contentType };
+  }
+
+  private static getImageContentType(ext: string): string {
+    const types: Record<string, string> = {
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".png": "image/png",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+    };
+    return types[ext] || "image/jpeg";
   }
 }

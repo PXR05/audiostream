@@ -1,6 +1,9 @@
 services:
   server:
     build: .
+    depends_on:
+      - db
+      - rustfs
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
     environment:
@@ -13,9 +16,37 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-true}
       CORS_CREDENTIALS: ${CORS_CREDENTIALS:-true}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
+      S3_ENDPOINT: http://rustfs:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+      S3_BUCKET: ${S3_BUCKET:-audiostream}
+      S3_DELETE_AFTER_MIGRATION: ${S3_DELETE_AFTER_MIGRATION:-false}
     volumes:
       - ./logs:/usr/src/app/logs:rw
       - ./uploads:/usr/src/app/uploads:rw
+      - ./temp:/usr/src/app/temp:rw
+    restart: unless-stopped
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+    volumes:
+      - ./rustfs-data:/data
+      - ./rustfs-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
 
   db:

@@ -10,6 +10,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.958.0",
     "@elysiajs/bearer": "^1.4.2",
     "@elysiajs/cors": "^1.4.0",
     "@elysiajs/openapi": "^1.4.13",

@@ -25,7 +25,7 @@ export const playlistController = new Elysia({
       return await PlaylistService.createPlaylist(
         auth.userId,
         body.name,
-        body.coverImage,
+        body.coverImage
       );
     },
     {
@@ -36,7 +36,7 @@ export const playlistController = new Elysia({
         400: PlaylistModel.errorResponse,
         413: PlaylistModel.errorResponse,
       },
-    },
+    }
   )
 
   .get(
@@ -45,7 +45,7 @@ export const playlistController = new Elysia({
       return await PlaylistService.getUserPlaylists(
         auth.userId,
         query.type,
-        query.limit,
+        query.limit
       );
     },
     {
@@ -54,7 +54,7 @@ export const playlistController = new Elysia({
       response: {
         200: PlaylistModel.listResponse,
       },
-    },
+    }
   )
 
   .guard({
@@ -73,31 +73,22 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    },
+    }
   )
 
   .get(
     "/:id/image",
     async ({ params: { id }, set, auth }) => {
-      const { playlist, imagePath } =
-        await PlaylistService.getPlaylistImageStream(id, auth.userId);
+      const { playlist, data, contentType } =
+        await PlaylistService.getPlaylistImageData(id, auth.userId);
 
-      const ext = imagePath.split(".").pop()?.toLowerCase();
-      const mimeType =
-        ext === "png"
-          ? "image/png"
-          : ext === "gif"
-            ? "image/gif"
-            : ext === "webp"
-              ? "image/webp"
-              : "image/jpeg";
-
-      set.headers["cache-control"] = "private, max-age=604800, stale-while-revalidate=86400";
-      set.headers["content-type"] = mimeType;
+      set.headers["cache-control"] =
+        "private, max-age=604800, stale-while-revalidate=86400";
+      set.headers["content-type"] = contentType;
       set.headers["content-disposition"] =
         `inline; filename="${playlist.coverImage}"`;
 
-      return Bun.file(imagePath);
+      return new Response(new Uint8Array(data));
     },
     {
       isAuth: true,
@@ -105,7 +96,7 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    },
+    }
   )
 
   .patch(
@@ -115,7 +106,7 @@ export const playlistController = new Elysia({
         id,
         auth.userId,
         body.name,
-        body.coverImage,
+        body.coverImage
       );
     },
     {
@@ -128,7 +119,7 @@ export const playlistController = new Elysia({
         404: PlaylistModel.errorResponse,
         413: PlaylistModel.errorResponse,
       },
-    },
+    }
   )
 
   .delete(
@@ -143,13 +134,17 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    },
+    }
   )
 
   .post(
     "/:id/items",
     async ({ params: { id }, body, auth }) => {
-      return await PlaylistService.addItemToPlaylist(id, auth.userId, body.audioId);
+      return await PlaylistService.addItemToPlaylist(
+        id,
+        auth.userId,
+        body.audioId
+      );
     },
     {
       isAuth: true,
@@ -160,7 +155,7 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    },
+    }
   )
 
   .guard({
@@ -170,7 +165,11 @@ export const playlistController = new Elysia({
   .delete(
     "/:id/items/:itemId",
     async ({ params: { id, itemId }, auth }) => {
-      return await PlaylistService.removeItemFromPlaylist(id, itemId, auth.userId);
+      return await PlaylistService.removeItemFromPlaylist(
+        id,
+        itemId,
+        auth.userId
+      );
     },
     {
       isAuth: true,
@@ -179,7 +178,7 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    },
+    }
   )
 
   .patch(
@@ -189,7 +188,7 @@ export const playlistController = new Elysia({
         id,
         itemId,
         auth.userId,
-        body.position,
+        body.position
       );
     },
     {
@@ -200,5 +199,5 @@ export const playlistController = new Elysia({
         403: PlaylistModel.errorResponse,
         404: PlaylistModel.errorResponse,
       },
-    },
+    }
   );

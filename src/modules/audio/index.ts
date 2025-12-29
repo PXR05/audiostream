@@ -3,6 +3,7 @@ import { AudioService } from "./service";
 import { AudioModel } from "./model";
 import { authPlugin } from "../../utils/auth";
 import { logger } from "../../utils/logger";
+import { Storage } from "../../utils/storage";
 
 export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
   .use(authPlugin)
@@ -289,43 +290,44 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
   .get(
     "/:id/stream",
     async ({ params: { id }, set, request, auth }) => {
-      const { file, filePath } = await AudioService.getAudioStream(
+      const { file, size, contentType } = await AudioService.getAudioStreamInfo(
         id,
         auth.userId
       );
-
-      const bunFile = Bun.file(filePath);
-      const fileSize = bunFile.size;
-
-      const mimeType =
-        file.metadata?.format === "mp3" ? "audio/mpeg" : "audio/*";
 
       const range = request.headers.get("range");
 
       if (range) {
         const parts = range.replace(/bytes=/, "").split("-");
         const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const end = parts[1] ? parseInt(parts[1], 10) : size - 1;
         const chunkSize = end - start + 1;
 
+        const { stream } = await Storage.getStream(file.filename, {
+          start,
+          end,
+        });
+
         set.status = 206;
-        set.headers["content-range"] = `bytes ${start}-${end}/${fileSize}`;
+        set.headers["content-range"] = `bytes ${start}-${end}/${size}`;
         set.headers["content-length"] = chunkSize.toString();
-        set.headers["content-type"] = mimeType;
+        set.headers["content-type"] = contentType;
         set.headers["accept-ranges"] = "bytes";
         set.headers["content-disposition"] =
           `inline; filename="${file.filename}"`;
 
-        return bunFile.slice(start, end + 1);
+        return new Response(stream as unknown as ReadableStream);
       }
 
-      set.headers["content-type"] = mimeType;
-      set.headers["content-length"] = fileSize.toString();
+      const { stream } = await Storage.getStream(file.filename);
+
+      set.headers["content-type"] = contentType;
+      set.headers["content-length"] = size.toString();
       set.headers["accept-ranges"] = "bytes";
       set.headers["content-disposition"] =
         `inline; filename="${file.filename}"`;
 
-      return bunFile;
+      return new Response(stream as unknown as ReadableStream);
     },
     {
       isAuth: true,
@@ -338,27 +340,17 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
   .get(
     "/:id/image",
     async ({ params: { id }, set, auth }) => {
-      const { file, imagePath } = await AudioService.getImageStream(
+      const { file, data, contentType } = await AudioService.getImageData(
         id,
         auth.userId
       );
 
-      const ext = imagePath.split(".").pop()?.toLowerCase();
-      const mimeType =
-        ext === "png"
-          ? "image/png"
-          : ext === "gif"
-            ? "image/gif"
-            : ext === "webp"
-              ? "image/webp"
-              : "image/jpeg";
-
       set.headers["cache-control"] = "public, max-age=31536000, immutable";
-      set.headers["content-type"] = mimeType;
+      set.headers["content-type"] = contentType;
       set.headers["content-disposition"] =
         `inline; filename="${file.imageFile}"`;
 
-      return Bun.file(imagePath);
+      return new Response(new Uint8Array(data));
     },
     {
       isAuth: true,

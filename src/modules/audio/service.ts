@@ -12,13 +12,14 @@ import {
 } from "../../db/repositories";
 import {
   generateId,
-  UPLOADS_DIR,
+  TEMP_DIR,
   ALLOWED_AUDIO_EXTENSIONS,
   MAX_FILE_SIZE,
   getWebPImageFileName,
 } from "../../utils/helpers";
 import { logger } from "../../utils/logger";
 import { PlaylistService } from "../playlist/service";
+import { Storage } from "../../utils/storage";
 
 function createSeededRandom(seed: string) {
   let hash = 0;
@@ -103,8 +104,8 @@ export abstract class AudioService {
     filePath: string
   ): Promise<void> {
     try {
-      const tempImagePath = join(UPLOADS_DIR, `temp_thumb_${Date.now()}.jpg`);
-      const tempAudioPath = join(UPLOADS_DIR, `temp_audio_${Date.now()}.mp3`);
+      const tempImagePath = join(TEMP_DIR, `temp_thumb_${Date.now()}.jpg`);
+      const tempAudioPath = join(TEMP_DIR, `temp_audio_${Date.now()}.mp3`);
 
       const extractProc = Bun.spawn(
         ["ffmpeg", "-i", filePath, "-an", "-vcodec", "copy", tempImagePath],
@@ -127,7 +128,7 @@ export abstract class AudioService {
       const y = Math.floor((height - size) / 2);
 
       const croppedImagePath = join(
-        UPLOADS_DIR,
+        TEMP_DIR,
         `cropped_thumb_${Date.now()}.jpg`
       );
       await image
@@ -214,10 +215,19 @@ export abstract class AudioService {
       }
 
       const webpImageFileName = getWebPImageFileName(audioId);
-      const webpImagePath = join(UPLOADS_DIR, webpImageFileName);
+      const tempImagePath = join(TEMP_DIR, webpImageFileName);
 
       const image = await jimp.read(Buffer.from(picture.data));
-      await image.quality(100).writeAsync(webpImagePath);
+      await image.quality(100).writeAsync(tempImagePath);
+
+      const imageData = await Bun.file(tempImagePath).arrayBuffer();
+      await Storage.upload(
+        webpImageFileName,
+        new Uint8Array(imageData),
+        "image/webp"
+      );
+
+      if (existsSync(tempImagePath)) unlinkSync(tempImagePath);
 
       return webpImageFileName;
     } catch (error) {
@@ -292,44 +302,62 @@ export abstract class AudioService {
 
     const id = generateId();
     const filename = `${id}${ext}`;
-    const filePath = join(UPLOADS_DIR, filename);
+    const tempFilePath = join(TEMP_DIR, filename);
 
     try {
-      await Bun.write(filePath, file);
+      await Bun.write(tempFilePath, file);
     } catch (error) {
-      logger.error("Failed to write file to disk", error, { context: "AUDIO" });
+      logger.error("Failed to write temp file", error, { context: "AUDIO" });
       throw status(500, "Failed to save file");
     }
 
-    const extractedImage = await this.extractAlbumArt(filePath, id);
+    try {
+      const extractedImage = await this.extractAlbumArt(tempFilePath, id);
+      const extractedMetadata = await this.extractMetadata(tempFilePath);
 
-    const extractedMetadata = await this.extractMetadata(filePath);
+      const contentType = this.getAudioContentType(ext);
+      await Storage.uploadFromFile(filename, tempFilePath, contentType);
 
-    await AudioRepository.create(
-      AudioRepository.fromMetadata(
+      await AudioRepository.create(
+        AudioRepository.fromMetadata(
+          id,
+          filename,
+          file.size,
+          extractedMetadata ?? undefined,
+          extractedImage ?? undefined
+        )
+      );
+
+      if (userId) {
+        await AudioFileUserRepository.create({
+          id: crypto.randomUUID(),
+          audioFileId: id,
+          userId,
+        });
+      }
+
+      return {
+        success: true,
         id,
         filename,
-        file.size,
-        extractedMetadata ?? undefined,
-        extractedImage ?? undefined
-      )
-    );
-
-    if (userId) {
-      await AudioFileUserRepository.create({
-        id: crypto.randomUUID(),
-        audioFileId: id,
-        userId,
-      });
+        imageFile: extractedImage || undefined,
+        message: "File uploaded successfully",
+      };
+    } finally {
+      if (existsSync(tempFilePath)) unlinkSync(tempFilePath);
     }
+  }
 
-    return {
-      success: true,
-      id,
-      filename,
-      imageFile: extractedImage || undefined,
-      message: "File uploaded successfully",
+  private static getAudioContentType(ext: string): string {
+    const types: Record<string, string> = {
+      ".mp3": "audio/mpeg",
+      ".wav": "audio/wav",
+      ".flac": "audio/flac",
+      ".m4a": "audio/mp4",
+      ".aac": "audio/aac",
+      ".ogg": "audio/ogg",
     };
+    return types[ext] || "audio/mpeg";
   }
 
   static async uploadFiles(
@@ -397,15 +425,14 @@ export abstract class AudioService {
     }
 
     const file = await this.getAudioById(id, userId);
-    const filePath = join(UPLOADS_DIR, file.filename);
 
     try {
-      unlinkSync(filePath);
+      await Storage.delete(file.filename);
 
       if (file.imageFile) {
-        const imagePath = join(UPLOADS_DIR, file.imageFile);
-        if (existsSync(imagePath)) {
-          unlinkSync(imagePath);
+        const imageExists = await Storage.exists(file.imageFile);
+        if (imageExists) {
+          await Storage.delete(file.imageFile);
         }
       }
 
@@ -417,51 +444,59 @@ export abstract class AudioService {
     }
   }
 
-  static async getAudioStream(
+  static async getAudioStreamInfo(
     id: string,
     userId: string
-  ): Promise<{ file: AudioModel.audioFile; filePath: string }> {
+  ): Promise<{
+    file: AudioModel.audioFile;
+    size: number;
+    contentType: string;
+  }> {
     const file = await this.getAudioById(id, userId);
-    const filePath = join(UPLOADS_DIR, file.filename);
 
-    if (!existsSync(filePath)) {
-      throw status(404, "File not found on disk");
+    const metadata = await Storage.getMetadata(file.filename);
+    if (!metadata) {
+      throw status(404, "File not found in storage");
     }
 
-    return { file, filePath };
+    return {
+      file,
+      size: metadata.size,
+      contentType: metadata.contentType,
+    };
   }
 
-  static async getImageStream(
+  static async getImageData(
     id: string,
     userId: string
-  ): Promise<{ file: AudioModel.audioFile; imagePath: string }> {
+  ): Promise<{
+    file: AudioModel.audioFile;
+    data: Buffer;
+    contentType: string;
+  }> {
     const file = await this.getAudioById(id, userId);
 
     if (!file.imageFile) {
       throw status(404, "No image file found for this audio");
     }
 
-    const baseImageName = file.imageFile.substring(
-      0,
-      file.imageFile.lastIndexOf(".")
-    );
-    const webpImageName = `${baseImageName}.webp`;
-    const webpImagePath = join(UPLOADS_DIR, webpImageName);
-
-    if (existsSync(webpImagePath)) {
-      return {
-        file: { ...file, imageFile: webpImageName },
-        imagePath: webpImagePath,
-      };
+    const exists = await Storage.exists(file.imageFile);
+    if (!exists) {
+      throw status(404, "Image not found in storage");
     }
 
-    const imagePath = join(UPLOADS_DIR, file.imageFile);
+    const data = await Storage.download(file.imageFile);
+    const ext = file.imageFile.split(".").pop()?.toLowerCase();
+    const contentType =
+      ext === "png"
+        ? "image/png"
+        : ext === "gif"
+          ? "image/gif"
+          : ext === "webp"
+            ? "image/webp"
+            : "image/jpeg";
 
-    if (!existsSync(imagePath)) {
-      throw status(404, "Image file not found on disk");
-    }
-
-    return { file, imagePath };
+    return { file, data, contentType };
   }
 
   static async search(
@@ -736,7 +771,7 @@ export abstract class AudioService {
 
     const id = generateId() + "_" + (videoId || "yt");
     const filename = `${id}.mp3`;
-    const filePath = join(UPLOADS_DIR, filename);
+    const tempFilePath = join(TEMP_DIR, filename);
 
     let hasCookies = false;
     try {
@@ -750,7 +785,7 @@ export abstract class AudioService {
       "--newline",
       "--no-playlist",
       "-o",
-      filePath,
+      tempFilePath,
       url,
     ];
 
@@ -810,11 +845,14 @@ export abstract class AudioService {
       message: "Processing file...",
     });
 
-    await this.cropAndReembedThumbnail(filePath);
+    await this.cropAndReembedThumbnail(tempFilePath);
 
-    const stats = await stat(filePath);
-    const extractedMetadata = await this.extractMetadata(filePath);
-    const extractedImage = await this.extractAlbumArt(filePath, id);
+    const stats = await stat(tempFilePath);
+    const extractedMetadata = await this.extractMetadata(tempFilePath);
+    const extractedImage = await this.extractAlbumArt(tempFilePath, id);
+
+    await Storage.uploadFromFile(filename, tempFilePath, "audio/mpeg");
+    if (existsSync(tempFilePath)) unlinkSync(tempFilePath);
 
     await AudioRepository.create(
       AudioRepository.fromMetadata(
@@ -1082,10 +1120,14 @@ export abstract class AudioService {
         try {
           const audioFile = await AudioRepository.findById(firstTrackId);
           if (audioFile) {
-            const audioPath = join(UPLOADS_DIR, audioFile.filename);
+            const tempAudioPath = join(TEMP_DIR, audioFile.filename);
+            if (!existsSync(tempAudioPath)) {
+              const data = await Storage.download(audioFile.filename);
+              await Bun.write(tempAudioPath, data);
+            }
             const coverImageId = crypto.randomUUID();
             const extractedCoverImage = await this.extractAlbumArt(
-              audioPath,
+              tempAudioPath,
               coverImageId
             );
             if (extractedCoverImage) {
