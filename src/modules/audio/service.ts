@@ -79,7 +79,7 @@ export abstract class AudioService {
     return [
       ...(hasCookies ? ["--cookies", "cookies.txt"] : []),
       "--extractor-args",
-      "youtube:player_client=default,tv_simply",
+      "youtube:player_client=default,tv_simply,tv,android_vr",
       "-f",
       "bestaudio",
       "-x",

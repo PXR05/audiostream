@@ -16,7 +16,7 @@ services:
       timeout: 5s
       retries: 5
 
-  rustfs:
+  s3:
     image: rustfs/rustfs:latest
     ports:
       - "9000:9000"
@@ -28,8 +28,8 @@ services:
       RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
       RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
     volumes:
-      - ./rustfs-data:/data
-      - ./rustfs-logs:/app/logs
+      - ./rustfs-data:/data:rw
+      - ./rustfs-logs:/app/logs:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s

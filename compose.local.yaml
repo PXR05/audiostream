@@ -15,7 +15,7 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-true}
       CORS_CREDENTIALS: ${CORS_CREDENTIALS:-true}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
-      S3_ENDPOINT: http://rustfs:9000
+      S3_ENDPOINT: http://s3:9000
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
       S3_BUCKET: ${S3_BUCKET:-audiostream}
@@ -26,7 +26,7 @@ services:
       - ./temp:/usr/src/app/temp:rw
     restart: unless-stopped
 
-  rustfs:
+  s3:
     image: rustfs/rustfs:latest
     ports:
       - "9000:9000"
@@ -38,8 +38,8 @@ services:
       RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
       RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
     volumes:
-      - ./rustfs-data:/data
-      - ./rustfs-logs:/app/logs
+      - ./rustfs-data:/data:rw
+      - ./rustfs-logs:/app/logs:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s
