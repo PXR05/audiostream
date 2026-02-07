@@ -138,23 +138,8 @@ export abstract class PlaylistService {
       type,
       limit
     );
-
-    const playlistsWithCount = await Promise.all(
-      playlists.map(async (playlist) => {
-        const items = await PlaylistRepository.getItems(playlist.id, userId);
-        return {
-          id: playlist.id,
-          name: playlist.name,
-          userId: playlist.userId,
-          coverImage: playlist.coverImage ?? undefined,
-          createdAt: playlist.createdAt,
-          updatedAt: playlist.updatedAt,
-          itemCount: items.length,
-        };
-      })
-    );
-
-    return { playlists: playlistsWithCount };
+    
+    return { playlists };
   }
 
   static async getPlaylistById(

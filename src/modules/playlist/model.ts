@@ -80,7 +80,7 @@ export namespace PlaylistModel {
     id: t.String(),
     name: t.String(),
     userId: t.String(),
-    coverImage: t.Optional(t.String()),
+    coverImage: t.Optional(t.Nullable(t.String())),
     createdAt: t.Date(),
     updatedAt: t.Date(),
     itemCount: t.Optional(t.Number()),

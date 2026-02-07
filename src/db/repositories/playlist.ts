@@ -10,7 +10,18 @@ import {
   type AudioFile,
   audioFileUsers,
 } from "../schema";
-import { eq, asc, desc, sql, or, like, and, SQL, not } from "drizzle-orm";
+import {
+  eq,
+  asc,
+  desc,
+  sql,
+  or,
+  like,
+  and,
+  SQL,
+  not,
+  count,
+} from "drizzle-orm";
 
 export abstract class PlaylistRepository {
   static async create(data: NewPlaylist): Promise<Playlist> {
@@ -26,7 +37,7 @@ export abstract class PlaylistRepository {
     userId: string,
     type?: "artist" | "album" | "user" | "auto" | "youtube",
     limit?: number,
-  ): Promise<Playlist[]> {
+  ): Promise<(Playlist & { itemCount: number })[]> {
     let typeFilter: SQL | undefined;
     switch (type) {
       case "artist":
@@ -55,10 +66,27 @@ export abstract class PlaylistRepository {
     }
 
     const query = db
-      .select()
+      .select({
+        id: playlists.id,
+        name: playlists.name,
+        userId: playlists.userId,
+        coverImage: playlists.coverImage,
+        createdAt: playlists.createdAt,
+        updatedAt: playlists.updatedAt,
+        itemCount: sql<number>`CAST(COUNT(${playlistItems.id}) AS INTEGER)`,
+      })
       .from(playlists)
+      .leftJoin(playlistItems, eq(playlists.id, playlistItems.playlistId))
       .where(and(eq(playlists.userId, userId), typeFilter))
-      .orderBy(desc(playlists.createdAt));
+      .groupBy(
+        playlists.id,
+        playlists.name,
+        playlists.userId,
+        playlists.coverImage,
+        playlists.createdAt,
+        playlists.updatedAt,
+      )
+      .orderBy(desc(playlists.updatedAt));
     if (limit) {
       query.limit(limit);
     }
