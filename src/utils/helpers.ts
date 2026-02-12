@@ -7,6 +7,7 @@ export const TEMP_DIR = "temp";
 export const MAX_FILE_SIZE = 100 * 1024 * 1024;
 export const ALLOWED_AUDIO_EXTENSIONS = [
   ".mp3",
+  ".opus",
   ".wav",
   ".flac",
   ".m4a",
@@ -23,7 +24,7 @@ export const ALLOWED_IMAGE_EXTENSIONS = [
 
 export function getImageFileName(
   audioId: string,
-  extension: string = ".jpg"
+  extension: string = ".jpg",
 ): string {
   return `${audioId}_image${extension}`;
 }

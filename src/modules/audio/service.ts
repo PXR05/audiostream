@@ -143,7 +143,7 @@ export abstract class AudioService {
       "bestaudio",
       "-x",
       "--audio-format",
-      "mp3",
+      "opus",
       "--embed-metadata",
       "--embed-thumbnail",
       "--parse-metadata",
@@ -163,11 +163,23 @@ export abstract class AudioService {
     filePath: string,
   ): Promise<void> {
     try {
+      const ext = extname(filePath).toLowerCase();
       const tempImagePath = join(TEMP_DIR, `temp_thumb_${Date.now()}.jpg`);
-      const tempAudioPath = join(TEMP_DIR, `temp_audio_${Date.now()}.mp3`);
+      const tempAudioPath = join(TEMP_DIR, `temp_audio_${Date.now()}${ext}`);
 
       const extractProc = Bun.spawn(
-        ["ffmpeg", "-i", filePath, "-an", "-vcodec", "copy", tempImagePath],
+        [
+          "ffmpeg",
+          "-i",
+          filePath,
+          "-an",
+          "-frames:v",
+          "1",
+          "-q:v",
+          "2",
+          "-y",
+          tempImagePath,
+        ],
         { stdout: "pipe", stderr: "pipe" },
       );
       await extractProc.exited;
@@ -195,30 +207,37 @@ export abstract class AudioService {
         .quality(95)
         .writeAsync(croppedImagePath);
 
-      const embedProc = Bun.spawn(
-        [
-          "ffmpeg",
-          "-i",
-          filePath,
-          "-i",
-          croppedImagePath,
-          "-map",
-          "0:a",
-          "-map",
-          "1:0",
-          "-c",
-          "copy",
-          "-id3v2_version",
-          "3",
-          "-metadata:s:v",
-          "title=Album cover",
-          "-metadata:s:v",
-          "comment=Cover (front)",
-          "-y",
-          tempAudioPath,
-        ],
-        { stdout: "pipe", stderr: "pipe" },
+      const ffmpegArgs = [
+        "ffmpeg",
+        "-i",
+        filePath,
+        "-i",
+        croppedImagePath,
+        "-map",
+        "0:a",
+        "-map",
+        "1:0",
+        "-c",
+        "copy",
+      ];
+
+      if (ext === ".mp3") {
+        ffmpegArgs.push("-id3v2_version", "3");
+      }
+
+      ffmpegArgs.push(
+        "-metadata:s:v",
+        "title=Album cover",
+        "-metadata:s:v",
+        "comment=Cover (front)",
+        "-y",
+        tempAudioPath,
       );
+
+      const embedProc = Bun.spawn(ffmpegArgs, {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
       const embedExit = await embedProc.exited;
 
       if (embedExit === 0 && existsSync(tempAudioPath)) {
@@ -265,19 +284,57 @@ export abstract class AudioService {
     filePath: string,
     audioId: string,
   ): Promise<string | null> {
+    const webpImageFileName = getWebPImageFileName(audioId);
+    const tempImagePath = join(TEMP_DIR, webpImageFileName);
+
     try {
       const metadata = await mm.parseFile(filePath);
-      const picture = metadata.common.picture?.[0];
+      const pictures = metadata.common.picture ?? [];
 
-      if (!picture) {
+      for (const picture of pictures) {
+        try {
+          const image = await jimp.read(Buffer.from(picture.data));
+          await image.quality(100).writeAsync(tempImagePath);
+
+          const imageData = await Bun.file(tempImagePath).arrayBuffer();
+          await Storage.upload(
+            webpImageFileName,
+            new Uint8Array(imageData),
+            "image/webp",
+          );
+
+          return webpImageFileName;
+        } catch (error) {
+          logger.warn("Skipping invalid embedded album art frame", {
+            context: "AUDIO",
+          });
+        }
+      }
+
+      const fallbackCoverPath = join(TEMP_DIR, `cover_${audioId}.jpg`);
+      const extractProc = Bun.spawn(
+        [
+          "ffmpeg",
+          "-i",
+          filePath,
+          "-an",
+          "-frames:v",
+          "1",
+          "-q:v",
+          "2",
+          "-y",
+          fallbackCoverPath,
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      await extractProc.exited;
+
+      if (!existsSync(fallbackCoverPath)) {
         return null;
       }
 
-      const webpImageFileName = getWebPImageFileName(audioId);
-      const tempImagePath = join(TEMP_DIR, webpImageFileName);
-
-      const image = await jimp.read(Buffer.from(picture.data));
-      await image.quality(100).writeAsync(tempImagePath);
+      const fallbackImage = await jimp.read(fallbackCoverPath);
+      await fallbackImage.quality(100).writeAsync(tempImagePath);
 
       const imageData = await Bun.file(tempImagePath).arrayBuffer();
       await Storage.upload(
@@ -286,12 +343,13 @@ export abstract class AudioService {
         "image/webp",
       );
 
-      if (existsSync(tempImagePath)) unlinkSync(tempImagePath);
-
+      if (existsSync(fallbackCoverPath)) unlinkSync(fallbackCoverPath);
       return webpImageFileName;
     } catch (error) {
       logger.error("Album art extraction failed", error, { context: "AUDIO" });
       return null;
+    } finally {
+      if (existsSync(tempImagePath)) unlinkSync(tempImagePath);
     }
   }
 
@@ -410,13 +468,14 @@ export abstract class AudioService {
   private static getAudioContentType(ext: string): string {
     const types: Record<string, string> = {
       ".mp3": "audio/mpeg",
+      ".opus": "audio/opus",
       ".wav": "audio/wav",
       ".flac": "audio/flac",
       ".m4a": "audio/mp4",
       ".aac": "audio/aac",
       ".ogg": "audio/ogg",
     };
-    return types[ext] || "audio/mpeg";
+    return types[ext] || "application/octet-stream";
   }
 
   static async uploadFiles(
@@ -833,7 +892,8 @@ export abstract class AudioService {
     });
 
     const id = generateId() + "_" + (videoId || "yt");
-    const filename = `${id}.mp3`;
+    const downloadExt = ".opus";
+    const filename = `${id}${downloadExt}`;
     const tempFilePath = join(TEMP_DIR, filename);
 
     let hasCookies = false;
@@ -910,7 +970,7 @@ export abstract class AudioService {
           } else if (line.includes("[ExtractAudio]")) {
             sendEvent({
               type: "info",
-              message: "Converting to MP3...",
+              message: "Converting audio...",
             });
           } else if (line.includes("[EmbedThumbnail]")) {
             sendEvent({
@@ -942,7 +1002,8 @@ export abstract class AudioService {
       const extractedMetadata = await this.extractMetadata(tempFilePath);
       const extractedImage = await this.extractAlbumArt(tempFilePath, id);
 
-      await Storage.uploadFromFile(filename, tempFilePath, "audio/mpeg");
+      const contentType = this.getAudioContentType(downloadExt);
+      await Storage.uploadFromFile(filename, tempFilePath, contentType);
       if (existsSync(tempFilePath)) unlinkSync(tempFilePath);
 
       await AudioRepository.create(
