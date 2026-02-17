@@ -28,6 +28,7 @@ COPY --from=mwader/static-ffmpeg:8.0 /ffprobe /usr/local/bin/
 
 RUN apt-get update 
 RUN apt-get install -y python3 --no-install-recommends
+RUN apt-get install -y python3-mutagen
 RUN apt-get install -y curl
 
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/bin/yt-dlp
