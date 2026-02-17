@@ -138,7 +138,7 @@ export abstract class AudioService {
     return [
       ...(hasCookies ? ["--cookies", "cookies.txt"] : []),
       "--extractor-args",
-      "youtube:player_client=default,android_vr",
+      "youtube:player_client=default,mweb",
       "-f",
       "bestaudio",
       "-x",
@@ -159,109 +159,23 @@ export abstract class AudioService {
     ];
   }
 
-  private static async cropAndReembedThumbnail(
-    filePath: string,
-  ): Promise<void> {
-    try {
-      const ext = extname(filePath).toLowerCase();
-      const tempImagePath = join(TEMP_DIR, `temp_thumb_${Date.now()}.jpg`);
-      const tempAudioPath = join(TEMP_DIR, `temp_audio_${Date.now()}${ext}`);
-
-      const extractProc = Bun.spawn(
-        [
-          "ffmpeg",
-          "-i",
-          filePath,
-          "-an",
-          "-frames:v",
-          "1",
-          "-q:v",
-          "2",
-          "-y",
-          tempImagePath,
-        ],
-        { stdout: "pipe", stderr: "pipe" },
-      );
-      await extractProc.exited;
-
-      if (!existsSync(tempImagePath)) {
-        logger.warn("No embedded thumbnail found to crop", {
-          context: "AUDIO",
-        });
-        return;
-      }
-
-      const image = await jimp.read(tempImagePath);
-      const width = image.getWidth();
-      const height = image.getHeight();
-      const size = Math.min(width, height);
-      const x = Math.floor((width - size) / 2);
-      const y = Math.floor((height - size) / 2);
-
-      const croppedImagePath = join(
-        TEMP_DIR,
-        `cropped_thumb_${Date.now()}.jpg`,
-      );
-      await image
-        .crop(x, y, size, size)
-        .quality(95)
-        .writeAsync(croppedImagePath);
-
-      const ffmpegArgs = [
-        "ffmpeg",
-        "-i",
-        filePath,
-        "-i",
-        croppedImagePath,
-        "-map",
-        "0:a",
-        "-map",
-        "1:0",
-        "-c",
-        "copy",
-      ];
-
-      if (ext === ".mp3") {
-        ffmpegArgs.push("-id3v2_version", "3");
-      }
-
-      ffmpegArgs.push(
-        "-metadata:s:v",
-        "title=Album cover",
-        "-metadata:s:v",
-        "comment=Cover (front)",
-        "-y",
-        tempAudioPath,
-      );
-
-      const embedProc = Bun.spawn(ffmpegArgs, {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const embedExit = await embedProc.exited;
-
-      if (embedExit === 0 && existsSync(tempAudioPath)) {
-        unlinkSync(filePath);
-        await rename(tempAudioPath, filePath);
-        logger.info("Successfully cropped and re-embedded thumbnail", {
-          context: "AUDIO",
-        });
-      }
-      if (existsSync(tempImagePath)) unlinkSync(tempImagePath);
-      if (existsSync(croppedImagePath)) unlinkSync(croppedImagePath);
-      if (existsSync(tempAudioPath)) unlinkSync(tempAudioPath);
-    } catch (error) {
-      logger.error("Failed to crop and re-embed thumbnail", error, {
-        context: "AUDIO",
-      });
-    }
-  }
-
   static async extractMetadata(
     filePath: string,
   ): Promise<AudioModel.audioMetadata | null> {
     try {
-      const metadata = await mm.parseFile(filePath);
+      let metadata: mm.IAudioMetadata;
+
+      try {
+        metadata = await mm.parseFile(filePath, {
+          skipCovers: true,
+        });
+      } catch {
+        metadata = await mm.parseFile(filePath, {
+          skipCovers: true,
+          skipPostHeaders: true,
+        });
+      }
+
       return {
         title: metadata.common.title,
         artist: metadata.common.artist,
@@ -288,13 +202,30 @@ export abstract class AudioService {
     const tempImagePath = join(TEMP_DIR, webpImageFileName);
 
     try {
-      const metadata = await mm.parseFile(filePath);
-      const pictures = metadata.common.picture ?? [];
+      let pictures: mm.IPicture[] = [];
+
+      try {
+        const metadata = await mm.parseFile(filePath);
+        pictures = metadata.common.picture ?? [];
+      } catch (error) {
+        logger.warn("Embedded album art parse failed, using ffmpeg fallback", {
+          context: "AUDIO",
+        });
+      }
 
       for (const picture of pictures) {
         try {
           const image = await jimp.read(Buffer.from(picture.data));
-          await image.quality(100).writeAsync(tempImagePath);
+          const width = image.getWidth();
+          const height = image.getHeight();
+          const size = Math.min(width, height);
+          const x = Math.floor((width - size) / 2);
+          const y = Math.floor((height - size) / 2);
+
+          await image
+            .crop(x, y, size, size)
+            .quality(100)
+            .writeAsync(tempImagePath);
 
           const imageData = await Bun.file(tempImagePath).arrayBuffer();
           await Storage.upload(
@@ -334,7 +265,16 @@ export abstract class AudioService {
       }
 
       const fallbackImage = await jimp.read(fallbackCoverPath);
-      await fallbackImage.quality(100).writeAsync(tempImagePath);
+      const fallbackWidth = fallbackImage.getWidth();
+      const fallbackHeight = fallbackImage.getHeight();
+      const fallbackSize = Math.min(fallbackWidth, fallbackHeight);
+      const fallbackX = Math.floor((fallbackWidth - fallbackSize) / 2);
+      const fallbackY = Math.floor((fallbackHeight - fallbackSize) / 2);
+
+      await fallbackImage
+        .crop(fallbackX, fallbackY, fallbackSize, fallbackSize)
+        .quality(100)
+        .writeAsync(tempImagePath);
 
       const imageData = await Bun.file(tempImagePath).arrayBuffer();
       await Storage.upload(
@@ -995,8 +935,6 @@ export abstract class AudioService {
         type: "info",
         message: "Processing file...",
       });
-
-      await this.cropAndReembedThumbnail(tempFilePath);
 
       const stats = await stat(tempFilePath);
       const extractedMetadata = await this.extractMetadata(tempFilePath);

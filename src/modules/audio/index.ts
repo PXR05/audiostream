@@ -72,7 +72,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
   )
 
   .get(
-    "/youtube/search",
+    "/search/youtube",
     async ({ query }) => {
       return await AudioService.searchYoutube(query.q);
     },
@@ -149,7 +149,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
     >()
   )
   .get(
-    "/youtube",
+    "/upload/youtube",
     async ({ query, auth, set, store }) => {
       set.headers["Content-Type"] = "text/event-stream";
       set.headers["Cache-Control"] = "no-cache";
