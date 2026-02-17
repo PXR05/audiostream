@@ -1027,6 +1027,7 @@ export abstract class AudioService {
       ...(hasCookies ? ["--cookies", "cookies.txt"] : []),
       "--user-agent",
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      "--ignore-errors",
       "--dump-json",
       "--flat-playlist",
       url,
@@ -1038,21 +1039,50 @@ export abstract class AudioService {
     });
 
     const infoExitCode = await infoProc.exited;
+    const stdout = await new Response(infoProc.stdout).text();
+    const stderr = await new Response(infoProc.stderr).text();
 
     if (infoExitCode !== 0) {
-      const stderr = await new Response(infoProc.stderr).text();
-      throw new Error(
-        `Failed to fetch playlist info: ${stderr.substring(0, 200)}`,
+      logger.warn(
+        `yt-dlp playlist info returned exit code ${infoExitCode}, continuing with partial results if available`,
+        { context: "YOUTUBE" },
       );
+      if (stderr.trim()) {
+        logger.warn(
+          `yt-dlp playlist info stderr: ${stderr.substring(0, 300)}`,
+          {
+            context: "YOUTUBE",
+          },
+        );
+      }
     }
 
-    const stdout = await new Response(infoProc.stdout).text();
-    const lines = stdout.trim().split("\n");
-    const videos = lines.map((line) => JSON.parse(line));
+    const lines = stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const videos = lines.flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        logger.warn(
+          `Skipping non-JSON yt-dlp playlist line: ${line.substring(0, 120)}`,
+          {
+            context: "YOUTUBE",
+          },
+        );
+        return [];
+      }
+    });
 
     logger.info(JSON.stringify(videos, null, 2));
 
     if (videos.length === 0) {
+      if (infoExitCode !== 0 && stderr.trim()) {
+        throw new Error(
+          `Failed to fetch playlist info: ${stderr.substring(0, 200)}`,
+        );
+      }
       throw new Error("No videos found in playlist");
     }
 
@@ -1249,7 +1279,7 @@ export abstract class AudioService {
     );
 
     const playlistResult: AudioModel.youtubePlaylistResponse = {
-      success: allSuccessful,
+      success: true,
       isPlaylist: true as const,
       playlistId: youtubePlaylistId,
       playlistTitle,
