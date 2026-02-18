@@ -36,7 +36,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.audioListResponse,
       },
-    }
+    },
   )
 
   .get(
@@ -54,7 +54,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.audioListResponse,
       },
-    }
+    },
   )
 
   .get(
@@ -68,7 +68,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.searchSuggestionsResponse,
       },
-    }
+    },
   )
 
   .get(
@@ -83,7 +83,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         200: AudioModel.youtubeSearchResponse,
         500: AudioModel.errorResponse,
       },
-    }
+    },
   )
 
   .get(
@@ -103,7 +103,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         200: AudioModel.audioListResponse,
       },
-    }
+    },
   )
 
   .post(
@@ -135,7 +135,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         400: AudioModel.errorResponse,
         413: AudioModel.errorResponse,
       },
-    }
+    },
   )
 
   .state(
@@ -145,8 +145,10 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       {
         listeners: Set<(data: AudioModel.youtubeProgressEvent) => void>;
         promise: Promise<void> | null;
+        abortController: AbortController;
+        userId: string;
       }
-    >()
+    >(),
   )
   .get(
     "/upload/youtube",
@@ -178,9 +180,12 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
           let downloadInfo = store.activeDownloads.get(query.stream);
 
           if (!downloadInfo) {
+            const abortController = new AbortController();
             downloadInfo = {
               listeners: new Set(),
               promise: null,
+              abortController,
+              userId: auth.userId,
             };
             store.activeDownloads.set(query.stream, downloadInfo);
 
@@ -196,7 +201,8 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
             downloadInfo.promise = AudioService.downloadYoutube(
               query.url,
               auth.userId,
-              broadcastEvent
+              broadcastEvent,
+              abortController.signal,
             )
               .then(() => {
                 setTimeout(() => {
@@ -236,7 +242,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         },
         cancel() {
           logger.warn(
-            "SSE connection closed by client, download will continue in background"
+            "SSE connection closed by client, download will continue in background",
           );
         },
       });
@@ -249,7 +255,46 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         url: t.String({ format: "uri" }),
         stream: t.String({ format: "uuid" }),
       }),
-    }
+    },
+  )
+
+  .delete(
+    "/upload/youtube/:stream",
+    async ({ params, store, auth }) => {
+      const downloadInfo = store.activeDownloads.get(params.stream);
+      if (!downloadInfo) {
+        return {
+          success: false,
+          message: "No active download found for this stream",
+        };
+      }
+
+      if (downloadInfo.userId !== auth.userId) {
+        return {
+          success: false,
+          message: "You can only cancel your own downloads",
+        };
+      }
+
+      downloadInfo.abortController.abort();
+      logger.info(
+        `YouTube download cancelled by user for stream ${params.stream}`,
+      );
+
+      return { success: true, message: "Download cancellation requested" };
+    },
+    {
+      isAuth: true,
+      params: t.Object({
+        stream: t.String(),
+      }),
+      response: {
+        200: t.Object({
+          success: t.Boolean(),
+          message: t.String(),
+        }),
+      },
+    },
   )
 
   .guard({
@@ -268,7 +313,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         200: AudioModel.audioDetailResponse,
         404: AudioModel.errorResponse,
       },
-    }
+    },
   )
 
   .delete(
@@ -284,7 +329,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         404: AudioModel.errorResponse,
         500: AudioModel.errorResponse,
       },
-    }
+    },
   )
 
   .get(
@@ -292,7 +337,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
     async ({ params: { id }, set, request, auth }) => {
       const { file, size, contentType } = await AudioService.getAudioStreamInfo(
         id,
-        auth.userId
+        auth.userId,
       );
 
       const range = request.headers.get("range");
@@ -334,7 +379,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         404: AudioModel.errorResponse,
       },
-    }
+    },
   )
 
   .get(
@@ -342,7 +387,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
     async ({ params: { id }, set, auth }) => {
       const { file, data, contentType } = await AudioService.getImageData(
         id,
-        auth.userId
+        auth.userId,
       );
 
       set.headers["cache-control"] = "public, max-age=31536000, immutable";
@@ -357,5 +402,5 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       response: {
         404: AudioModel.errorResponse,
       },
-    }
+    },
   );

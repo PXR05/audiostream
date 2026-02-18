@@ -701,8 +701,14 @@ export abstract class AudioService {
     url: string,
     userId: string,
     sendEvent: (event: AudioModel.youtubeProgressEvent) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     try {
+      if (signal?.aborted) {
+        sendEvent({ type: "cancelled", message: "Download was cancelled" });
+        return;
+      }
+
       sendEvent({
         type: "info",
         message: "Checking dependencies...",
@@ -717,14 +723,30 @@ export abstract class AudioService {
         throw new Error("yt-dlp is not installed or not accessible");
       }
 
+      if (signal?.aborted) {
+        sendEvent({ type: "cancelled", message: "Download was cancelled" });
+        return;
+      }
+
       const isPlaylist = url.includes("list=") || url.includes("/playlist");
 
       if (isPlaylist) {
-        await this.downloadYoutubePlaylist(url, userId, sendEvent);
+        await this.downloadYoutubePlaylist(url, userId, sendEvent, signal);
       } else {
-        await this.downloadYoutubeSingle(url, userId, sendEvent);
+        await this.downloadYoutubeSingle(
+          url,
+          userId,
+          sendEvent,
+          undefined,
+          undefined,
+          signal,
+        );
       }
     } catch (error) {
+      if (signal?.aborted) {
+        sendEvent({ type: "cancelled", message: "Download was cancelled" });
+        return;
+      }
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
       logger.error("YouTube download failed", error, {
@@ -740,6 +762,7 @@ export abstract class AudioService {
     sendEvent: (event: AudioModel.youtubeProgressEvent) => void,
     playlistId?: string,
     playlistIndex?: number,
+    signal?: AbortSignal,
   ): Promise<AudioModel.youtubeResponse> {
     sendEvent({
       type: "info",
@@ -826,6 +849,10 @@ export abstract class AudioService {
       }
     }
 
+    if (signal?.aborted) {
+      throw new Error("Download was cancelled");
+    }
+
     sendEvent({
       type: "info",
       message: "Starting download...",
@@ -885,40 +912,62 @@ export abstract class AudioService {
         stderr: "pipe",
       });
 
+      const abortHandler = () => {
+        try {
+          proc.kill();
+        } catch {
+        }
+      };
+      signal?.addEventListener("abort", abortHandler, { once: true });
+
       const reader = proc.stdout.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          if (signal?.aborted) {
+            reader.cancel();
+            break;
+          }
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        for (const line of lines) {
-          if (line.includes("[download]")) {
-            const progressData = this.parseYtDlpProgress(line);
-            if (progressData) {
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.includes("[download]")) {
+              const progressData = this.parseYtDlpProgress(line);
+              if (progressData) {
+                sendEvent({
+                  type: "progress",
+                  message: `Downloading: ${progressData.percent?.toFixed(1)}%`,
+                  data: progressData,
+                });
+              }
+            } else if (line.includes("[ExtractAudio]")) {
               sendEvent({
-                type: "progress",
-                message: `Downloading: ${progressData.percent?.toFixed(1)}%`,
-                data: progressData,
+                type: "info",
+                message: "Converting audio...",
+              });
+            } else if (line.includes("[EmbedThumbnail]")) {
+              sendEvent({
+                type: "info",
+                message: "Embedding thumbnail...",
               });
             }
-          } else if (line.includes("[ExtractAudio]")) {
-            sendEvent({
-              type: "info",
-              message: "Converting audio...",
-            });
-          } else if (line.includes("[EmbedThumbnail]")) {
-            sendEvent({
-              type: "info",
-              message: "Embedding thumbnail...",
-            });
           }
         }
+      } finally {
+        signal?.removeEventListener("abort", abortHandler);
+      }
+
+      if (signal?.aborted) {
+        if (existsSync(tempFilePath)) unlinkSync(tempFilePath);
+        throw new Error("Download was cancelled");
       }
 
       const exitCode = await proc.exited;
@@ -1002,6 +1051,7 @@ export abstract class AudioService {
     url: string,
     userId: string,
     sendEvent: (event: AudioModel.youtubeProgressEvent) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     sendEvent({
       type: "info",
@@ -1038,7 +1088,20 @@ export abstract class AudioService {
       stderr: "pipe",
     });
 
+    const infoAbortHandler = () => {
+      try {
+        infoProc.kill();
+      } catch {
+      }
+    };
+    signal?.addEventListener("abort", infoAbortHandler, { once: true });
+
     const infoExitCode = await infoProc.exited;
+    signal?.removeEventListener("abort", infoAbortHandler);
+
+    if (signal?.aborted) {
+      throw new Error("Download was cancelled");
+    }
     const stdout = await new Response(infoProc.stdout).text();
     const stderr = await new Response(infoProc.stderr).text();
 
@@ -1125,6 +1188,20 @@ export abstract class AudioService {
 
     const results = [];
     for (let index = 0; index < videos.length; index++) {
+      if (signal?.aborted) {
+        logger.info("Playlist download cancelled by user", {
+          context: "YOUTUBE",
+        });
+        sendEvent({
+          type: "cancelled",
+          message: `Playlist download cancelled after ${index} of ${videos.length} videos`,
+          playlistTitle,
+          playlistTotal: videos.length,
+          playlistCurrent: index,
+        });
+        return;
+      }
+
       const video = videos[index];
       const videoId = video.id;
       const videoTitle = video.title || "Unknown";
@@ -1155,6 +1232,7 @@ export abstract class AudioService {
           sendEvent,
           dbPlaylistId,
           video.playlist_index,
+          signal,
         );
 
         logger.info(`✓ Successfully added to database`);
@@ -1199,9 +1277,16 @@ export abstract class AudioService {
           type: "info",
           message: `Waiting ${delaySeconds} seconds before next download...`,
         });
-        await new Promise((resolve) =>
-          setTimeout(resolve, delaySeconds * 1000),
-        );
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(resolve, delaySeconds * 1000);
+          if (signal) {
+            const onAbort = () => {
+              clearTimeout(timeout);
+              resolve();
+            };
+            signal.addEventListener("abort", onAbort, { once: true });
+          }
+        });
       }
     }
 
