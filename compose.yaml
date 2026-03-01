@@ -24,6 +24,12 @@ services:
       - ./logs:/usr/src/app/logs:rw
       - ./uploads:/usr/src/app/uploads:rw
       - ./temp:/usr/src/app/temp:rw
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
 
   s3:
@@ -51,7 +57,6 @@ services:
 
   db:
     image: postgres:17-alpine
-    restart: always
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
@@ -65,3 +70,4 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: always

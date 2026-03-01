@@ -10,7 +10,7 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 const HOST = process.env.HOST || "0.0.0.0";
 
 const parseCorsOrigin = (
-  origin: string | undefined
+  origin: string | undefined,
 ): boolean | string | RegExp | string[] => {
   if (!origin || origin === "true" || origin === "*") return true;
   if (origin === "false") return false;
@@ -34,13 +34,14 @@ const app = new Elysia()
   .use(cors(corsConfig))
   .use(openapi())
   .get("/", () => ({ message: ":)" }))
+  .get("/health", () => ({ status: "ok", timestamp: new Date().toISOString() }))
   .onBeforeHandle(({ request, cookie }) => {
     if (process.env.NODE_ENV === "production") return;
     logger.info(
       `${request.method} request: ${request.url} | Cookies: ${JSON.stringify(cookie)}`,
       {
         context: "HTTP",
-      }
+      },
     );
   })
   .use(authController)
@@ -81,7 +82,7 @@ logger.info(
   `Server running at http://${app.server?.hostname}:${app.server?.port}`,
   {
     context: "SERVER",
-  }
+  },
 );
 logger.info(`Environment: ${process.env.NODE_ENV || "development"}`, {
   context: "SERVER",
