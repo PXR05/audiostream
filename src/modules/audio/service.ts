@@ -1,6 +1,6 @@
 import { status } from "elysia";
 import { existsSync, unlinkSync } from "fs";
-import { stat, rename } from "fs/promises";
+import { stat } from "fs/promises";
 import { join, extname } from "path";
 import * as mm from "music-metadata";
 import jimp from "jimp";
@@ -300,6 +300,9 @@ export abstract class AudioService {
     sortBy?: "filename" | "size" | "uploadedAt" | "title";
     sortOrder?: "asc" | "desc";
     lastFetchedAt?: number;
+    artist?: string;
+    album?: string;
+    genre?: string;
   }): Promise<AudioModel.audioListResponse> {
     const {
       page = 1,
@@ -308,6 +311,9 @@ export abstract class AudioService {
       sortOrder = "desc",
       userId,
       lastFetchedAt,
+      artist,
+      album,
+      genre,
     } = options;
 
     const { files: dbFiles, total } = await AudioRepository.findAll({
@@ -317,6 +323,9 @@ export abstract class AudioService {
       sortOrder,
       userId,
       lastFetchedAt,
+      artist,
+      album,
+      genre,
     });
 
     const files = dbFiles.map((dbFile) => AudioRepository.toAudioModel(dbFile));
@@ -915,8 +924,7 @@ export abstract class AudioService {
       const abortHandler = () => {
         try {
           proc.kill();
-        } catch {
-        }
+        } catch {}
       };
       signal?.addEventListener("abort", abortHandler, { once: true });
 
@@ -1091,8 +1099,7 @@ export abstract class AudioService {
     const infoAbortHandler = () => {
       try {
         infoProc.kill();
-      } catch {
-      }
+      } catch {}
     };
     signal?.addEventListener("abort", infoAbortHandler, { once: true });
 

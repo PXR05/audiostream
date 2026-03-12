@@ -35,6 +35,9 @@ export namespace AudioModel {
       t.Union([t.Literal("asc"), t.Literal("desc")], { default: "desc" }),
     ),
     lastFetchedAt: t.Optional(t.Number()),
+    artist: t.Optional(t.String()),
+    album: t.Optional(t.String()),
+    genre: t.Optional(t.String()),
   });
   export type paginationQuery = typeof paginationQuery.static;
 

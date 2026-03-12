@@ -21,6 +21,9 @@ export abstract class AudioRepository {
     sortBy?: "id" | "filename" | "size" | "uploadedAt" | "title";
     sortOrder?: "asc" | "desc";
     lastFetchedAt?: number;
+    artist?: string;
+    album?: string;
+    genre?: string;
   }): Promise<{ files: AudioFile[]; total: number }> {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 20;
@@ -59,8 +62,20 @@ export abstract class AudioRepository {
 
       if (options?.lastFetchedAt) {
         whereConditions.push(
-          gt(audioFiles.uploadedAt, new Date(options.lastFetchedAt))
+          gt(audioFiles.uploadedAt, new Date(options.lastFetchedAt)),
         );
+      }
+
+      if (options?.artist) {
+        whereConditions.push(ilike(audioFiles.artist, `%${options.artist}%`));
+      }
+
+      if (options?.album) {
+        whereConditions.push(ilike(audioFiles.album, `%${options.album}%`));
+      }
+
+      if (options?.genre) {
+        whereConditions.push(ilike(audioFiles.genre, `%${options.genre}%`));
       }
 
       const userFiles = await db
@@ -99,7 +114,7 @@ export abstract class AudioRepository {
 
   static async findById(
     id: string,
-    userId?: string
+    userId?: string,
   ): Promise<AudioFile | null> {
     if (userId) {
       const result = await db
@@ -109,8 +124,8 @@ export abstract class AudioRepository {
         .where(
           and(
             eq(audioFiles.id, id),
-            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1))
-          )
+            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
+          ),
         );
 
       return result[0]?.audio_files ?? null;
@@ -141,7 +156,7 @@ export abstract class AudioRepository {
 
   static async update(
     id: string,
-    data: Partial<NewAudioFile>
+    data: Partial<NewAudioFile>,
   ): Promise<AudioFile | null> {
     const result = await db
       .update(audioFiles)
@@ -165,7 +180,7 @@ export abstract class AudioRepository {
       page?: number;
       limit?: number;
       userId: string;
-    }
+    },
   ): Promise<{ files: AudioFile[]; total: number }> {
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 20;
@@ -213,8 +228,8 @@ export abstract class AudioRepository {
         .where(
           and(
             searchCondition,
-            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1))
-          )
+            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
+          ),
         )
         .groupBy(audioFiles.id)
         .orderBy(desc(relevanceScore))
@@ -228,8 +243,8 @@ export abstract class AudioRepository {
         .where(
           and(
             searchCondition,
-            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1))
-          )
+            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
+          ),
         )
         .groupBy(audioFiles.id);
 
@@ -259,7 +274,7 @@ export abstract class AudioRepository {
 
   static async searchSuggestions(
     query: string,
-    limit: number = 5
+    limit: number = 5,
   ): Promise<AudioModel.searchSuggestion[]> {
     const searchPattern = `%${query}%`;
     const startsWithPattern = `${query}%`;
@@ -363,7 +378,7 @@ export abstract class AudioRepository {
     size: number,
     metadata?: AudioModel.audioMetadata,
     imageFile?: string,
-    youtubeId?: string
+    youtubeId?: string,
   ): NewAudioFile {
     return {
       id,
