@@ -146,6 +146,14 @@ export abstract class AudioRepository {
     return result[0] ?? null;
   }
 
+  static async findByTidalId(tidalId: string): Promise<AudioFile | null> {
+    const result = await db
+      .select()
+      .from(audioFiles)
+      .where(eq(audioFiles.tidalId, tidalId));
+    return result[0] ?? null;
+  }
+
   static async findByYoutubeId(videoId: string): Promise<AudioFile | null> {
     const result = await db
       .select()
@@ -357,6 +365,7 @@ export abstract class AudioRepository {
       uploadedAt: dbFile.uploadedAt,
       imageFile: dbFile.imageFile ?? undefined,
       youtubeId: dbFile.youtubeId ?? undefined,
+      tidalId: dbFile.tidalId ?? undefined,
       metadata: {
         title: dbFile.title ?? undefined,
         artist: dbFile.artist ?? undefined,
@@ -379,10 +388,12 @@ export abstract class AudioRepository {
     metadata?: AudioModel.audioMetadata,
     imageFile?: string,
     youtubeId?: string,
+    tidalId?: string,
   ): NewAudioFile {
     return {
       id,
       youtubeId,
+      tidalId,
       filename,
       size,
       uploadedAt: new Date(),

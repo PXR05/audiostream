@@ -13,6 +13,7 @@ export const audioFiles = pgTable(
   {
     id: text("id").primaryKey(),
     youtubeId: text("youtube_id"),
+    tidalId: text("tidal_id"),
     filename: text("filename").notNull().unique(),
     size: integer("size").notNull(),
     uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),

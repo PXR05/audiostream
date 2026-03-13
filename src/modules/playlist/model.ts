@@ -42,7 +42,8 @@ export namespace PlaylistModel {
         t.Literal("user"),
         t.Literal("auto"),
         t.Literal("youtube"),
-      ])
+        t.Literal("tidal"),
+      ]),
     ),
     limit: t.Optional(t.Number({ minimum: 1 })),
   });
@@ -70,7 +71,7 @@ export namespace PlaylistModel {
           sampleRate: t.Optional(t.Number()),
           channels: t.Optional(t.Number()),
           format: t.Optional(t.String()),
-        })
+        }),
       ),
     }),
   });

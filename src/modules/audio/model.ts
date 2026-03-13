@@ -84,6 +84,7 @@ export namespace AudioModel {
     metadata: t.Optional(audioMetadata),
     imageFile: t.Optional(t.String()),
     youtubeId: t.Optional(t.String()),
+    tidalId: t.Optional(t.String()),
   });
   export type audioFile = typeof audioFile.static;
 
@@ -235,4 +236,37 @@ export namespace AudioModel {
 
   export const youtubeSearchResponse = t.Array(youtubeSearchResult);
   export type youtubeSearchResponse = typeof youtubeSearchResponse.static;
+
+  export const tidalSearchQuery = t.Object({
+    q: t.String({ minLength: 1 }),
+  });
+  export type tidalSearchQuery = typeof tidalSearchQuery.static;
+
+  export const tidalSearchResult = t.Object({
+    trackId: t.String(),
+    title: t.String(),
+    artist: t.String(),
+    thumbnail: t.String(),
+    url: t.String({ format: "uri" }),
+  });
+  export type tidalSearchResult = typeof tidalSearchResult.static;
+
+  export const tidalSearchResponse = t.Array(tidalSearchResult);
+  export type tidalSearchResponse = typeof tidalSearchResponse.static;
+
+  export const tidalBody = t.Object({
+    url: t.String({ format: "uri" }),
+  });
+  export type tidalBody = typeof tidalBody.static;
+
+  export const tidalQuery = t.Object({
+    url: t.String({ format: "uri" }),
+    stream: t.String({ format: "uuid" }),
+    quality: t.Optional(
+      t.Union([t.Literal("LOSSLESS"), t.Literal("HIGH")], {
+        default: "LOSSLESS",
+      }),
+    ),
+  });
+  export type tidalQuery = typeof tidalQuery.static;
 }

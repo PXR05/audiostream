@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { AudioService } from "./service";
+import { DownloadService } from "./download";
 import { AudioModel } from "./model";
 import { authPlugin } from "../../utils/auth";
 import { logger } from "../../utils/logger";
@@ -10,12 +11,14 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
   .model({
     "audio.upload": AudioModel.uploadBody,
     "audio.youtube": AudioModel.youtubeBody,
+    "audio.tidal": AudioModel.tidalBody,
     "audio.params": AudioModel.audioParams,
     "audio.pagination": AudioModel.paginationQuery,
     "audio.search": AudioModel.searchQuery,
     "audio.searchSuggestions": AudioModel.searchSuggestionsQuery,
     "audio.random": AudioModel.randomQuery,
     "audio.youtubeSearch": AudioModel.youtubeSearchQuery,
+    "audio.tidalSearch": AudioModel.tidalSearchQuery,
   })
 
   .get(
@@ -84,6 +87,21 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       query: "audio.youtubeSearch",
       response: {
         200: AudioModel.youtubeSearchResponse,
+        500: AudioModel.errorResponse,
+      },
+    },
+  )
+
+  .get(
+    "/search/tidal",
+    async ({ query }) => {
+      return await AudioService.searchTidal(query.q);
+    },
+    {
+      isAuth: true,
+      query: "audio.tidalSearch",
+      response: {
+        200: AudioModel.tidalSearchResponse,
         500: AudioModel.errorResponse,
       },
     },
@@ -201,7 +219,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
               }
             }
 
-            downloadInfo.promise = AudioService.downloadYoutube(
+            downloadInfo.promise = DownloadService.downloadYoutube(
               query.url,
               auth.userId,
               broadcastEvent,
@@ -282,6 +300,150 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       downloadInfo.abortController.abort();
       logger.info(
         `YouTube download cancelled by user for stream ${params.stream}`,
+      );
+
+      return { success: true, message: "Download cancellation requested" };
+    },
+    {
+      isAuth: true,
+      params: t.Object({
+        stream: t.String(),
+      }),
+      response: {
+        200: t.Object({
+          success: t.Boolean(),
+          message: t.String(),
+        }),
+      },
+    },
+  )
+
+  .get(
+    "/upload/tidal",
+    async ({ query, auth, set, store }) => {
+      set.headers["Content-Type"] = "text/event-stream";
+      set.headers["Cache-Control"] = "no-cache";
+      set.headers["Connection"] = "keep-alive";
+
+      if (store.activeDownloads === undefined) {
+        store.activeDownloads = new Map();
+      }
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          let isClosed = false;
+
+          function sendEvent(data: AudioModel.youtubeProgressEvent) {
+            if (isClosed) return;
+            try {
+              const message = `data: ${JSON.stringify(data)}\n\n`;
+              controller.enqueue(encoder.encode(message));
+            } catch {
+              isClosed = true;
+            }
+          }
+
+          let downloadInfo = store.activeDownloads.get(query.stream);
+
+          if (!downloadInfo) {
+            const abortController = new AbortController();
+            downloadInfo = {
+              listeners: new Set(),
+              promise: null,
+              abortController,
+              userId: auth.userId,
+            };
+            store.activeDownloads.set(query.stream, downloadInfo);
+
+            downloadInfo.listeners.add(sendEvent);
+
+            function broadcastEvent(data: AudioModel.youtubeProgressEvent) {
+              const info = store.activeDownloads.get(query.stream);
+              if (info) {
+                info.listeners.forEach((listener) => listener(data));
+              }
+            }
+
+            downloadInfo.promise = DownloadService.downloadTidal(
+              query.url,
+              query.quality ?? "LOSSLESS",
+              auth.userId,
+              broadcastEvent,
+              abortController.signal,
+            )
+              .then(() => {
+                setTimeout(() => {
+                  store.activeDownloads.delete(query.stream);
+                }, 1000);
+              })
+              .catch((error: any) => {
+                broadcastEvent({
+                  type: "error",
+                  message: error.message || "Download failed",
+                });
+                setTimeout(() => {
+                  store.activeDownloads.delete(query.stream);
+                }, 1000);
+              });
+          } else {
+            downloadInfo.listeners.add(sendEvent);
+          }
+
+          try {
+            await downloadInfo.promise;
+            if (!isClosed) {
+              controller.close();
+              isClosed = true;
+            }
+          } catch {
+            if (!isClosed) {
+              controller.close();
+              isClosed = true;
+            }
+          } finally {
+            const info = store.activeDownloads.get(query.stream);
+            if (info) {
+              info.listeners.delete(sendEvent);
+            }
+          }
+        },
+        cancel() {
+          logger.warn(
+            "SSE connection closed by client, Tidal download will continue in background",
+          );
+        },
+      });
+
+      return new Response(stream);
+    },
+    {
+      isAuth: true,
+      query: AudioModel.tidalQuery,
+    },
+  )
+
+  .delete(
+    "/upload/tidal/:stream",
+    async ({ params, store, auth }) => {
+      const downloadInfo = store.activeDownloads.get(params.stream);
+      if (!downloadInfo) {
+        return {
+          success: false,
+          message: "No active download found for this stream",
+        };
+      }
+
+      if (downloadInfo.userId !== auth.userId) {
+        return {
+          success: false,
+          message: "You can only cancel your own downloads",
+        };
+      }
+
+      downloadInfo.abortController.abort();
+      logger.info(
+        `Tidal download cancelled by user for stream ${params.stream}`,
       );
 
       return { success: true, message: "Download cancellation requested" };
