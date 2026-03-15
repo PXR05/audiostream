@@ -5,6 +5,7 @@ import process from "node:process";
 import migrate from "./scripts/migrate";
 import migrateToS3 from "./scripts/migrateToS3";
 import cleanupTemp from "./scripts/cleanupTemp";
+import backfillIsrc from "./scripts/backfillIsrc";
 import { TEMP_DIR } from "./utils/helpers";
 import { logger } from "./utils/logger";
 import { AuthService } from "./modules/auth/service";
@@ -51,6 +52,13 @@ if (cluster.isPrimary) {
     logger.error("Database migration failed", error, { context: "STARTUP" });
     console.error("Migration error:", error);
     process.exit(1);
+  }
+
+  try {
+    await backfillIsrc();
+    logger.info("ISRC backfill completed", { context: "STARTUP" });
+  } catch (error) {
+    logger.error("ISRC backfill failed", error, { context: "STARTUP" });
   }
 
   await AuthService.seedAdminUser();

@@ -7,6 +7,7 @@ import {
 } from "../schema";
 import { eq, asc, desc, sql, or, ilike, count, and, gt } from "drizzle-orm";
 import type { AudioModel } from "../../modules/audio/model";
+import { normalizeIsrc } from "../../utils/isrc";
 
 export abstract class AudioRepository {
   static async create(data: NewAudioFile): Promise<AudioFile> {
@@ -159,6 +160,17 @@ export abstract class AudioRepository {
       .select()
       .from(audioFiles)
       .where(eq(audioFiles.youtubeId, videoId));
+    return result[0] ?? null;
+  }
+
+  static async findByIsrc(isrc: string): Promise<AudioFile | null> {
+    const normalized = normalizeIsrc(isrc);
+    if (!normalized) return null;
+
+    const result = await db
+      .select()
+      .from(audioFiles)
+      .where(eq(audioFiles.isrc, normalized));
     return result[0] ?? null;
   }
 
@@ -366,10 +378,12 @@ export abstract class AudioRepository {
       imageFile: dbFile.imageFile ?? undefined,
       youtubeId: dbFile.youtubeId ?? undefined,
       tidalId: dbFile.tidalId ?? undefined,
+      isrc: dbFile.isrc ?? undefined,
       metadata: {
         title: dbFile.title ?? undefined,
         artist: dbFile.artist ?? undefined,
         album: dbFile.album ?? undefined,
+        isrc: dbFile.isrc ?? undefined,
         year: dbFile.year ?? undefined,
         genre: dbFile.genre ? JSON.parse(dbFile.genre) : undefined,
         duration: dbFile.duration ?? undefined,
@@ -389,11 +403,15 @@ export abstract class AudioRepository {
     imageFile?: string,
     youtubeId?: string,
     tidalId?: string,
+    isrc?: string,
   ): NewAudioFile {
+    const normalizedIsrc = normalizeIsrc(isrc ?? metadata?.isrc);
+
     return {
       id,
       youtubeId,
       tidalId,
+      isrc: normalizedIsrc ?? null,
       filename,
       size,
       uploadedAt: new Date(),

@@ -18,6 +18,7 @@ import {
 import { logger } from "../../utils/logger";
 import { Storage } from "../../utils/storage";
 import { searchTidalTracks } from "../../utils/tidal";
+import { normalizeIsrc } from "../../utils/isrc";
 
 function createSeededRandom(seed: string) {
   let hash = 0;
@@ -62,6 +63,7 @@ export abstract class AudioService {
         title: metadata.common.title,
         artist: metadata.common.artist,
         album: metadata.common.album,
+        isrc: normalizeIsrc(metadata.common.isrc) ?? undefined,
         year: metadata.common.year,
         genre: metadata.common.genre,
         duration: metadata.format.duration,

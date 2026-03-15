@@ -14,6 +14,7 @@ export const audioFiles = pgTable(
     id: text("id").primaryKey(),
     youtubeId: text("youtube_id"),
     tidalId: text("tidal_id"),
+    isrc: text("isrc"),
     filename: text("filename").notNull().unique(),
     size: integer("size").notNull(),
     uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
@@ -35,6 +36,7 @@ export const audioFiles = pgTable(
     titleIdx: index("title_idx").on(table.title),
     artistIdx: index("artist_idx").on(table.artist),
     albumIdx: index("album_idx").on(table.album),
+    isrcIdx: index("isrc_idx").on(table.isrc),
     uploadedAtIdx: index("uploaded_at_idx").on(table.uploadedAt),
   }),
 );

@@ -1,4 +1,5 @@
 import { existsSync, unlinkSync } from "fs";
+import { normalizeIsrc } from "./isrc";
 
 export const TIDAL_PROXY_APIS = [
   "https://tidal-api.binimum.org",
@@ -37,6 +38,13 @@ interface TidalV2Response {
     manifest?: string;
     bitDepth?: number;
     sampleRate?: number;
+  };
+}
+
+interface TidalInfoResponse {
+  isrc?: string;
+  data?: {
+    isrc?: string;
   };
 }
 
@@ -125,6 +133,93 @@ export interface TidalSearchResult {
 
 const TIDAL_DEFAULT_SEARCH_LIMIT = 10;
 const TIDAL_MAX_SEARCH_LIMIT = 50;
+
+async function fetchTrackIsrcFromProxy(
+  api: string,
+  trackId: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  let lastErr: Error = new Error("No attempts made");
+  let retryDelay = TIDAL_RETRY_DELAY_MS;
+
+  for (let attempt = 0; attempt <= TIDAL_MAX_RETRIES; attempt++) {
+    if (signal?.aborted) throw new Error("Download cancelled");
+
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, retryDelay));
+      retryDelay *= 2;
+    }
+
+    const reqUrl = `${api}/info/?id=${trackId}`;
+
+    try {
+      const resp = await fetch(reqUrl, {
+        signal: signal ?? AbortSignal.timeout(TIDAL_API_TIMEOUT_MS),
+      });
+
+      if (resp.status === 429) {
+        await resp.body?.cancel();
+        lastErr = new Error("Rate limited");
+        retryDelay = 2000;
+        continue;
+      }
+
+      if (resp.status >= 500) {
+        await resp.body?.cancel();
+        lastErr = new Error(`HTTP ${resp.status}`);
+        continue;
+      }
+
+      if (!resp.ok) {
+        await resp.body?.cancel();
+        throw new Error(`HTTP ${resp.status}`);
+      }
+
+      const body: TidalInfoResponse = await resp.json();
+      return normalizeIsrc(body.data?.isrc ?? body.isrc);
+    } catch (e) {
+      const err = e as Error;
+      if (err.name === "AbortError") {
+        throw err;
+      }
+
+      lastErr = err;
+      const msg = err.message.toLowerCase();
+      if (
+        msg.includes("timeout") ||
+        msg.includes("reset") ||
+        msg.includes("econnrefused") ||
+        msg.includes("eof") ||
+        msg.includes("network") ||
+        msg.includes("fetch")
+      ) {
+        continue;
+      }
+      break;
+    }
+  }
+
+  throw lastErr;
+}
+
+export async function getTidalTrackIsrc(
+  trackId: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const attempts = TIDAL_PROXY_APIS.map(async (api) => {
+    const isrc = await fetchTrackIsrcFromProxy(api, trackId, signal);
+    if (!isrc) {
+      throw new Error("ISRC not found");
+    }
+    return isrc;
+  });
+
+  try {
+    return await Promise.any(attempts);
+  } catch {
+    return null;
+  }
+}
 
 export function parseTidalResourceUrl(url: string): TidalResourceRef {
   let parsed: URL;

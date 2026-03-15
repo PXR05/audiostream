@@ -66,6 +66,7 @@ export namespace AudioModel {
     title: t.Optional(t.String()),
     artist: t.Optional(t.String()),
     album: t.Optional(t.String()),
+    isrc: t.Optional(t.String()),
     year: t.Optional(t.Number()),
     genre: t.Optional(t.Array(t.String())),
     duration: t.Optional(t.Number()),
@@ -85,6 +86,7 @@ export namespace AudioModel {
     imageFile: t.Optional(t.String()),
     youtubeId: t.Optional(t.String()),
     tidalId: t.Optional(t.String()),
+    isrc: t.Optional(t.String()),
   });
   export type audioFile = typeof audioFile.static;
 

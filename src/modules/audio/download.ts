@@ -23,9 +23,12 @@ import {
   downloadDirectToFile,
   downloadDashToFile,
   getTidalTrackInfo,
+  getTidalTrackIsrc,
   getTidalCollectionInfo,
 } from "../../utils/tidal";
+import { getIsrcFromDeezerSearch } from "../../utils/deezer";
 import { AudioService } from "./service";
+import { NO_ISRC_SENTINEL, normalizeIsrc } from "../../utils/isrc";
 
 type Emit = (event: AudioModel.youtubeProgressEvent) => void;
 
@@ -87,6 +90,27 @@ export abstract class DownloadService {
     const simple = line.match(/\[download\]\s+(\d+\.?\d*)%/);
     if (simple) return { percent: parseFloat(simple[1]) };
     return null;
+  }
+
+  private static async resolveYoutubeIsrc(
+    metadata: AudioModel.audioMetadata | null,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const metadataIsrc = normalizeIsrc(metadata?.isrc);
+    if (metadataIsrc) {
+      return metadataIsrc;
+    }
+
+    const deezerIsrc = await getIsrcFromDeezerSearch({
+      title: metadata?.title,
+      artist: metadata?.artist,
+      signal,
+    });
+    if (deezerIsrc) {
+      return deezerIsrc;
+    }
+
+    return NO_ISRC_SENTINEL;
   }
 
   private static registerInFlight(
@@ -206,8 +230,7 @@ export abstract class DownloadService {
           return fromTrackInfo;
         }
       }
-    } catch {
-    }
+    } catch {}
 
     const firstTrack = await AudioRepository.findByTidalId(
       String(firstTrackId),
@@ -526,6 +549,10 @@ export abstract class DownloadService {
         AudioService.extractMetadata(tempFilePath),
         AudioService.extractAlbumArt(tempFilePath, id),
       ]);
+      const resolvedIsrc = await this.resolveYoutubeIsrc(
+        extractedMetadata,
+        signal,
+      );
 
       await Storage.uploadFromFile(
         filename,
@@ -542,6 +569,8 @@ export abstract class DownloadService {
           extractedMetadata ?? undefined,
           extractedImage ?? undefined,
           videoId || undefined,
+          undefined,
+          resolvedIsrc,
         ),
       );
       await this.ensureUserLibraryEntry({
@@ -915,8 +944,9 @@ export abstract class DownloadService {
     } = this.registerInFlight(inFlightKey, sendEvent);
     sendEvent = broadcast;
 
-    const id = generateId() + "_tidal";
+    const id = generateId() + "_" + (trackId || "tidal");
     const trackInfoPromise = getTidalTrackInfo(trackId);
+    const trackIsrcPromise = getTidalTrackIsrc(trackId, signal);
     let tempFilePath: string | null = null;
 
     try {
@@ -981,6 +1011,7 @@ export abstract class DownloadService {
       sendEvent({ type: "info", message: "Processing file..." });
 
       const trackInfo = await trackInfoPromise;
+      const trackIsrc = await trackIsrcPromise;
       if (trackInfo) {
         await this.embedMetadataWithFfmpeg(tempFilePath, {
           title: trackInfo.title,
@@ -1004,6 +1035,9 @@ export abstract class DownloadService {
         finalMetadata = { title: trackInfo.title, artist: trackInfo.artist };
       }
 
+      const resolvedIsrc =
+        trackIsrc ?? normalizeIsrc(extractedMetadata?.isrc) ?? NO_ISRC_SENTINEL;
+
       let extractedImage = trackInfo?.albumCoverUrl
         ? await this.downloadCoverFromUrl(trackInfo.albumCoverUrl, id)
         : null;
@@ -1026,6 +1060,7 @@ export abstract class DownloadService {
           extractedImage ?? undefined,
           undefined,
           trackIdStr,
+          resolvedIsrc,
         ),
       );
       await this.ensureUserLibraryEntry({
