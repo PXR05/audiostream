@@ -34,6 +34,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
         return {
           message: result.message,
           user: result.user,
+          sessionId: result.sessionId,
         };
       } catch (error) {
         set.status = 400;
@@ -69,6 +70,7 @@ export const authController = new Elysia({ prefix: "/auth", tags: ["auth"] })
         return {
           message: result.message,
           user: result.user,
+          sessionId: result.sessionId,
         };
       } catch (error) {
         set.status = 401;

@@ -47,6 +47,7 @@ export namespace AuthModel {
   export const authResponse = t.Object({
     message: t.String(),
     user: userObject,
+    sessionId: t.String(),
   });
   export const meResponse = t.Object({ data: userInfo });
   export const usersListResponse = t.Object({ data: t.Array(userInfo) });
