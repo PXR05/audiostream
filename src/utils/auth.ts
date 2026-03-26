@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { logger } from "./logger";
 import { validateSession } from "../modules/auth/service";
+import bearer from "@elysiajs/bearer";
 
 export type AuthData = {
   userId: string;
@@ -22,10 +23,10 @@ export const getSessionCookieOptions = (sessionId: string) => ({
   maxAge: SESSION_COOKIE_MAX_AGE,
 });
 
-export const authPlugin = new Elysia({ name: "auth" }).macro({
+export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
   isAuth: {
-    async resolve({ set, cookie }) {
-      const sessionId = cookie[SESSION_COOKIE_NAME].cookie.value;
+    async resolve({ set, cookie, bearer }) {
+      const sessionId = cookie[SESSION_COOKIE_NAME].cookie.value ?? bearer;
 
       if (
         !sessionId ||
@@ -64,8 +65,8 @@ export const authPlugin = new Elysia({ name: "auth" }).macro({
     },
   },
   isAdmin: {
-    async resolve({ set, cookie }) {
-      const sessionId = cookie[SESSION_COOKIE_NAME].cookie.value;
+    async resolve({ set, cookie, bearer }) {
+      const sessionId = cookie[SESSION_COOKIE_NAME].cookie.value ?? bearer;
 
       if (
         !sessionId ||
