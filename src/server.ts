@@ -1,34 +1,14 @@
-import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
+import openapi from "@elysiajs/openapi";
+import { Elysia } from "elysia";
 import { audioController } from "./modules/audio";
 import { authController } from "./modules/auth";
 import { playlistController } from "./modules/playlist";
+import { corsConfig } from "./utils/cors";
 import { logger } from "./utils/logger";
-import openapi from "@elysiajs/openapi";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const HOST = process.env.HOST || "0.0.0.0";
-
-const parseCorsOrigin = (
-  origin: string | undefined,
-): boolean | string | RegExp | string[] => {
-  if (!origin || origin === "true" || origin === "*") return true;
-  if (origin === "false") return false;
-
-  if (origin.includes(",")) {
-    return origin.split(",").map((o) => o.trim());
-  }
-
-  if (origin.startsWith("/") && origin.endsWith("/")) {
-    return new RegExp(origin.slice(1, -1));
-  }
-  return origin;
-};
-
-const corsConfig = {
-  origin: parseCorsOrigin(process.env.CORS_ORIGIN),
-  credentials: process.env.CORS_CREDENTIALS !== "false",
-};
 
 const app = new Elysia()
   .use(cors(corsConfig))
@@ -37,8 +17,18 @@ const app = new Elysia()
   .get("/health", () => ({ status: "ok", timestamp: new Date().toISOString() }))
   .onBeforeHandle(({ request, cookie }) => {
     if (process.env.NODE_ENV === "production") return;
+
+    const headers = request.headers.toJSON();
+    const cookies = cookie ?? {};
+
     logger.info(
-      `${request.method} request: ${request.url} | Cookies: ${JSON.stringify(cookie)}`,
+      [
+        `${request.method} ${request.url}`,
+        "Headers:",
+        JSON.stringify(headers, null, 2),
+        "Cookies:",
+        JSON.stringify(cookies, null, 2),
+      ].join("\n"),
       {
         context: "HTTP",
       },
