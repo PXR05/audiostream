@@ -8,7 +8,6 @@ import { logger } from "./utils/logger";
 import { Storage } from "./utils/storage";
 import { AuthService } from "./modules/auth/service";
 import migrate from "./scripts/migrate";
-import backfillTidalMetadata from "./scripts/backfillTidalMetadata";
 
 if (cluster.isPrimary) {
   try {
@@ -69,17 +68,6 @@ if (cluster.isPrimary) {
     logger.error("Database migration failed", error, { context: "STARTUP" });
     console.error("Migration error:", error);
     process.exit(1);
-  }
-
-  try {
-    await backfillTidalMetadata();
-    logger.info("Tidal metadata backfill completed during startup", {
-      context: "STARTUP",
-    });
-  } catch (error) {
-    logger.error("Tidal metadata backfill failed during startup", error, {
-      context: "STARTUP",
-    });
   }
 
   await AuthService.seedAdminUser();

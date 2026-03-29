@@ -203,7 +203,19 @@ export abstract class Storage {
   ): Promise<{ size: number; contentType: string } | null> {
     try {
       const localPath = this.resolveLocalPath(key);
+      logger.debug(
+        `Getting local metadata for key: ${key}, path: ${localPath}`,
+        {
+          context: "STORAGE",
+        },
+      );
       const fileStats = await stat(localPath);
+      logger.debug(
+        `Local file stats for key: ${key} - size: ${fileStats.size}, isFile: ${fileStats.isFile()}`,
+        {
+          context: "STORAGE",
+        },
+      );
       if (!fileStats.isFile()) return null;
       return {
         size: fileStats.size,
@@ -226,6 +238,15 @@ export abstract class Storage {
   }> {
     const localPath = this.resolveLocalPath(key);
     const fileStats = await stat(localPath);
+    logger.debug(`Getting local stream for key: ${key}, path: ${localPath}`, {
+      context: "STORAGE",
+    });
+    logger.debug(
+      `Local file stats for key: ${key} - size: ${fileStats.size}, isFile: ${fileStats.isFile()}`,
+      {
+        context: "STORAGE",
+      },
+    );
     if (!fileStats.isFile()) {
       throw new Error(`Local fallback file not found: ${key}`);
     }

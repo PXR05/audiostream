@@ -22,4 +22,5 @@ logs/
 
 rustfs-data/
 rustfs-data.bak/
+rustfs-data.srv/
 rustfs-logs/
