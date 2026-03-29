@@ -45,7 +45,7 @@ const MAX_TRACKS = parseNonNegativeInt(
   0,
 );
 const ONLY_MISSING =
-  process.env.TIDAL_METADATA_BACKFILL_ONLY_MISSING === "true";
+  process.env.TIDAL_METADATA_BACKFILL_ONLY_MISSING !== "false";
 
 type EmbedMetadata = {
   title?: string;
@@ -237,7 +237,7 @@ async function runTaggingPass(
 async function embedMetadataWithCover(
   filePath: string,
   metadata: EmbedMetadata,
-): Promise<void> {
+): Promise<boolean> {
   const ext = extname(filePath);
   const outputPath = ext ? `${filePath}.tagged${ext}` : `${filePath}.tagged`;
   const metadataPairs = collectMetadataPairs(metadata);
@@ -260,13 +260,18 @@ async function embedMetadataWithCover(
     }
 
     if (!result.ok) {
-      throw new Error(
-        result.stderr.substring(0, 500) || "ffmpeg tagging failed",
+      logger.warn(
+        `Skipping retag for this track; ffmpeg tagging failed: ${result.stderr.substring(0, 300) || "unknown error"}`,
+        {
+          context: CONTEXT,
+        },
       );
+      return false;
     }
 
     if (existsSync(filePath)) unlinkSync(filePath);
     renameSync(outputPath, filePath);
+    return true;
   } finally {
     if (existsSync(outputPath)) {
       try {
@@ -335,7 +340,7 @@ async function processTrack(row: AudioFile): Promise<"updated" | "skipped"> {
       );
     }
 
-    await embedMetadataWithCover(tempFilePath, {
+    const retagged = await embedMetadataWithCover(tempFilePath, {
       title: trackInfo?.title,
       artist: trackInfo?.artist,
       album: trackInfo?.album,
@@ -354,22 +359,40 @@ async function processTrack(row: AudioFile): Promise<"updated" | "skipped"> {
       coverImagePath: tempCoverPath ?? undefined,
     });
 
-    const [stats, extractedMetadata, extractedImage] = await Promise.all([
-      stat(tempFilePath),
-      AudioService.extractMetadata(tempFilePath),
-      AudioService.extractAlbumArt(tempFilePath, row.id),
-    ]);
+    if (!retagged) {
+      logger.warn(`Continuing metadata update without retag for ${row.id}`, {
+        context: CONTEXT,
+      });
+    }
+
+    let statsSize = row.size;
+    let extractedMetadata: Awaited<
+      ReturnType<typeof AudioService.extractMetadata>
+    > = null;
+    let extractedImage: string | null = null;
+
+    if (retagged) {
+      const [stats, metadata, image] = await Promise.all([
+        stat(tempFilePath),
+        AudioService.extractMetadata(tempFilePath),
+        AudioService.extractAlbumArt(tempFilePath, row.id),
+      ]);
+
+      statsSize = stats.size;
+      extractedMetadata = metadata;
+      extractedImage = image;
+
+      const contentType = AudioService.getAudioContentType(extension);
+      await Storage.uploadFromFile(row.filename, tempFilePath, contentType);
+    }
 
     const finalIsrc =
       normalizeIsrc(
         trackIsrc ?? trackInfo?.isrc ?? extractedMetadata?.isrc ?? row.isrc,
       ) ?? null;
 
-    const contentType = AudioService.getAudioContentType(extension);
-    await Storage.uploadFromFile(row.filename, tempFilePath, contentType);
-
     await AudioRepository.update(row.id, {
-      size: stats.size,
+      size: statsSize,
       title: extractedMetadata?.title ?? trackInfo?.title ?? row.title,
       artist: extractedMetadata?.artist ?? trackInfo?.artist ?? row.artist,
       album: extractedMetadata?.album ?? trackInfo?.album ?? row.album,
@@ -456,15 +479,27 @@ async function main() {
     try {
       await Storage.init();
     } catch (error) {
-      if (Storage.isLocalFallbackEnabled()) {
+      try {
+        await Storage.enableLocalFallback(
+          "Storage init failed in Tidal metadata backfill",
+        );
         logger.warn(
-          "Storage init failed but local fallback is already enabled; continuing backfill",
+          `Storage init failed; continuing backfill with local fallback at ${Storage.getLocalFallbackDir()}`,
           {
             context: CONTEXT,
           },
         );
-      } else {
-        throw error;
+      } catch {
+        if (Storage.isLocalFallbackEnabled()) {
+          logger.warn(
+            "Storage init failed but local fallback is already enabled; continuing backfill",
+            {
+              context: CONTEXT,
+            },
+          );
+        } else {
+          throw error;
+        }
       }
     }
   }
