@@ -38,6 +38,9 @@ if (cluster.isPrimary) {
   await cleanupTemp(tempMaxAgeHours);
 
   try {
+    if (process.env.S3_ENABLE_FALLBACK === "true") {
+      throw new Error("S3 fallback enabled, skipping S3 initialization");
+    }
     await Storage.init();
     logger.info("S3 storage initialized", { context: "STARTUP" });
   } catch (error) {
