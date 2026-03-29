@@ -14,12 +14,15 @@ import { Readable } from "stream";
 import { UPLOADS_DIR } from "./helpers";
 import { logger } from "./logger";
 
-const S3_ENDPOINT = process.env.S3_ENDPOINT || "http://localhost:9000";
+const S3_ENDPOINT = process.env.S3_ENDPOINT?.trim();
 const S3_ACCESS_KEY = process.env.S3_ACCESS_KEY || "rustfsadmin";
 const S3_SECRET_KEY = process.env.S3_SECRET_KEY || "rustfsadmin";
 const S3_BUCKET = process.env.S3_BUCKET || "audiostream";
-const LOCAL_FALLBACK_DIR =
-  process.env.STORAGE_LOCAL_FALLBACK_DIR || UPLOADS_DIR;
+const LOCAL_STORAGE_DIR =
+  process.env.STORAGE_LOCAL_DIR ||
+  process.env.STORAGE_LOCAL_FALLBACK_DIR ||
+  UPLOADS_DIR;
+const S3_ENABLED = Boolean(S3_ENDPOINT);
 
 const CONTENT_TYPES: Record<string, string> = {
   ".mp3": "audio/mpeg",
@@ -37,27 +40,47 @@ const CONTENT_TYPES: Record<string, string> = {
   ".webp": "image/webp",
 };
 
-logger.info(`Using S3 endpoint: ${S3_ENDPOINT}`, { context: "STORAGE" });
-logger.info(`Using local fallback directory: ${LOCAL_FALLBACK_DIR}`, {
+if (S3_ENABLED) {
+  logger.info(`Using S3 endpoint: ${S3_ENDPOINT}`, { context: "STORAGE" });
+} else {
+  logger.info("No S3 endpoint configured; local storage mode enabled", {
+    context: "STORAGE",
+  });
+}
+logger.info(`Using local storage directory: ${LOCAL_STORAGE_DIR}`, {
   context: "STORAGE",
 });
 
-const s3Client = new S3Client({
-  endpoint: S3_ENDPOINT,
-  region: "us-east-1",
-  credentials: {
-    accessKeyId: S3_ACCESS_KEY,
-    secretAccessKey: S3_SECRET_KEY,
-  },
-  forcePathStyle: true,
-});
+const s3Client = S3_ENABLED
+  ? new S3Client({
+      endpoint: S3_ENDPOINT,
+      region: "us-east-1",
+      credentials: {
+        accessKeyId: S3_ACCESS_KEY,
+        secretAccessKey: S3_SECRET_KEY,
+      },
+      forcePathStyle: true,
+    })
+  : null;
 
 export abstract class Storage {
-  private static localFallbackEnabled = true;
+  private static localStorageEnabled = true;
   private static s3Available = false;
-  private static hasLoggedS3Fallback = false;
+  private static hasLoggedS3Unavailable = false;
 
   static async init(): Promise<void> {
+    await mkdir(LOCAL_STORAGE_DIR, { recursive: true });
+    this.localStorageEnabled = true;
+    this.s3Available = false;
+    this.hasLoggedS3Unavailable = false;
+
+    if (!S3_ENABLED || !s3Client) {
+      logger.info("Storage initialized in local-only mode", {
+        context: "STORAGE",
+      });
+      return;
+    }
+
     try {
       await s3Client.send(new HeadBucketCommand({ Bucket: S3_BUCKET }));
       this.s3Available = true;
@@ -75,46 +98,58 @@ export abstract class Storage {
         logger.info(`Bucket '${S3_BUCKET}' created`, { context: "STORAGE" });
       } else {
         this.s3Available = false;
-        logger.error(
-          "Failed to create bucket: " + S3_BUCKET + " " + JSON.stringify(error),
-          error,
+        logger.warn(
+          `Failed to initialize S3 bucket '${S3_BUCKET}', continuing with local storage`,
           {
             context: "STORAGE",
           },
         );
-        throw error;
+
+        await logger.debug(
+          `S3 init error: ${error instanceof Error ? error.message : String(error)}`,
+          undefined,
+          { context: "STORAGE" },
+        );
       }
     }
   }
 
-  static async enableLocalFallback(reason?: string): Promise<void> {
-    await mkdir(LOCAL_FALLBACK_DIR, { recursive: true });
+  static async enableLocalStorageMode(reason?: string): Promise<void> {
+    await mkdir(LOCAL_STORAGE_DIR, { recursive: true });
 
-    this.localFallbackEnabled = true;
+    this.localStorageEnabled = true;
     this.s3Available = false;
 
-    await logger.warn("Local fallback storage mode enabled", {
+    await logger.warn("Local storage mode enabled", {
       context: "STORAGE",
     });
 
     if (reason) {
-      await logger.warn(`Local fallback reason: ${reason}`, {
+      await logger.warn(`Local storage reason: ${reason}`, {
         context: "STORAGE",
       });
     }
   }
 
-  static isLocalFallbackEnabled(): boolean {
-    return this.localFallbackEnabled;
+  static isLocalStorageEnabled(): boolean {
+    return this.localStorageEnabled;
   }
 
-  static getLocalFallbackDir(): string {
-    return LOCAL_FALLBACK_DIR;
+  static getLocalStorageDir(): string {
+    return LOCAL_STORAGE_DIR;
   }
 
   private static getContentTypeFromKey(key: string): string {
     const ext = extname(key).toLowerCase();
     return CONTENT_TYPES[ext] || "application/octet-stream";
+  }
+
+  private static getS3Client(): S3Client {
+    if (!s3Client) {
+      throw new Error("S3 client is not configured");
+    }
+
+    return s3Client;
   }
 
   private static normalizeKey(key: string): string {
@@ -127,21 +162,8 @@ export abstract class Storage {
 
   private static resolveLocalPath(key: string): string {
     const safeKey = this.normalizeKey(key);
-    logger.debug(
-      `Resolving local path for key: ${key}, normalized: ${safeKey}`,
-      {
-        context: "STORAGE",
-      },
-    );
-    const root = resolve(LOCAL_FALLBACK_DIR);
-    logger.debug(`Local fallback root directory: ${root}`, {
-      context: "STORAGE",
-    });
+    const root = resolve(LOCAL_STORAGE_DIR);
     const fullPath = resolve(root, ...safeKey.split("/").filter(Boolean));
-    logger.debug(`Resolved local path: ${fullPath}`, {
-      context: "STORAGE",
-    });
-
     if (fullPath !== root && !fullPath.startsWith(root + sep)) {
       throw new Error(`Invalid storage key path: ${key}`);
     }
@@ -149,21 +171,21 @@ export abstract class Storage {
     return fullPath;
   }
 
-  private static async maybeFallbackOnS3Error(
+  private static async handleS3ErrorWithLocalStorage(
     operation: string,
     key: string,
     error: unknown,
   ): Promise<boolean> {
-    if (!this.localFallbackEnabled) {
+    if (!this.localStorageEnabled) {
       return false;
     }
 
     this.s3Available = false;
 
-    if (!this.hasLoggedS3Fallback) {
-      this.hasLoggedS3Fallback = true;
+    if (!this.hasLoggedS3Unavailable) {
+      this.hasLoggedS3Unavailable = true;
       await logger.warn(
-        `S3 unavailable during ${operation} for key '${key}', switching to local fallback`,
+        `S3 unavailable during ${operation} for key '${key}', using local storage mode`,
         {
           context: "STORAGE",
         },
@@ -207,19 +229,7 @@ export abstract class Storage {
   ): Promise<{ size: number; contentType: string } | null> {
     try {
       const localPath = this.resolveLocalPath(key);
-      logger.debug(
-        `Getting local metadata for key: ${key}, path: ${localPath}`,
-        {
-          context: "STORAGE",
-        },
-      );
       const fileStats = await stat(localPath);
-      logger.debug(
-        `Local file stats for key: ${key} - size: ${fileStats.size}, isFile: ${fileStats.isFile()}`,
-        {
-          context: "STORAGE",
-        },
-      );
       if (!fileStats.isFile()) return null;
       return {
         size: fileStats.size,
@@ -242,17 +252,8 @@ export abstract class Storage {
   }> {
     const localPath = this.resolveLocalPath(key);
     const fileStats = await stat(localPath);
-    logger.debug(`Getting local stream for key: ${key}, path: ${localPath}`, {
-      context: "STORAGE",
-    });
-    logger.debug(
-      `Local file stats for key: ${key} - size: ${fileStats.size}, isFile: ${fileStats.isFile()}`,
-      {
-        context: "STORAGE",
-      },
-    );
     if (!fileStats.isFile()) {
-      throw new Error(`Local fallback file not found: ${key}`);
+      throw new Error(`Local storage file not found: ${key}`);
     }
 
     const totalSize = fileStats.size;
@@ -296,13 +297,13 @@ export abstract class Storage {
     data: Buffer | Uint8Array,
     contentType?: string,
   ): Promise<void> {
-    if (!this.s3Available && this.localFallbackEnabled) {
+    if (!this.s3Available && this.localStorageEnabled) {
       await this.uploadLocal(key, data);
       return;
     }
 
     try {
-      await s3Client.send(
+      await this.getS3Client().send(
         new PutObjectCommand({
           Bucket: S3_BUCKET,
           Key: key,
@@ -311,12 +312,12 @@ export abstract class Storage {
         }),
       );
     } catch (error) {
-      const shouldFallback = await this.maybeFallbackOnS3Error(
+      const shouldUseLocalStorage = await this.handleS3ErrorWithLocalStorage(
         "upload",
         key,
         error,
       );
-      if (!shouldFallback) throw error;
+      if (!shouldUseLocalStorage) throw error;
       await this.uploadLocal(key, data);
     }
   }
@@ -331,12 +332,12 @@ export abstract class Storage {
   }
 
   static async download(key: string): Promise<Buffer> {
-    if (!this.s3Available && this.localFallbackEnabled) {
+    if (!this.s3Available && this.localStorageEnabled) {
       return await this.downloadLocal(key);
     }
 
     try {
-      const response = await s3Client.send(
+      const response = await this.getS3Client().send(
         new GetObjectCommand({
           Bucket: S3_BUCKET,
           Key: key,
@@ -354,12 +355,12 @@ export abstract class Storage {
       }
       return Buffer.concat(chunks);
     } catch (error) {
-      const shouldFallback = await this.maybeFallbackOnS3Error(
+      const shouldUseLocalStorage = await this.handleS3ErrorWithLocalStorage(
         "download",
         key,
         error,
       );
-      if (!shouldFallback) throw error;
+      if (!shouldUseLocalStorage) throw error;
       return await this.downloadLocal(key);
     }
   }
@@ -374,14 +375,14 @@ export abstract class Storage {
     totalSize: number;
     range?: { start: number; end: number };
   }> {
-    if (!this.s3Available && this.localFallbackEnabled) {
+    if (!this.s3Available && this.localStorageEnabled) {
       return await this.getStreamLocal(key, range);
     }
 
     const rangeHeader = range ? `bytes=${range.start}-${range.end}` : undefined;
 
     try {
-      const response = await s3Client.send(
+      const response = await this.getS3Client().send(
         new GetObjectCommand({
           Bucket: S3_BUCKET,
           Key: key,
@@ -405,47 +406,47 @@ export abstract class Storage {
         range,
       };
     } catch (error) {
-      const shouldFallback = await this.maybeFallbackOnS3Error(
+      const shouldUseLocalStorage = await this.handleS3ErrorWithLocalStorage(
         "getStream",
         key,
         error,
       );
-      if (!shouldFallback) throw error;
+      if (!shouldUseLocalStorage) throw error;
       return await this.getStreamLocal(key, range);
     }
   }
 
   static async delete(key: string): Promise<void> {
-    if (!this.s3Available && this.localFallbackEnabled) {
+    if (!this.s3Available && this.localStorageEnabled) {
       await this.deleteLocal(key);
       return;
     }
 
     try {
-      await s3Client.send(
+      await this.getS3Client().send(
         new DeleteObjectCommand({
           Bucket: S3_BUCKET,
           Key: key,
         }),
       );
     } catch (error) {
-      const shouldFallback = await this.maybeFallbackOnS3Error(
+      const shouldUseLocalStorage = await this.handleS3ErrorWithLocalStorage(
         "delete",
         key,
         error,
       );
-      if (!shouldFallback) throw error;
+      if (!shouldUseLocalStorage) throw error;
       await this.deleteLocal(key);
     }
   }
 
   static async exists(key: string): Promise<boolean> {
-    if (!this.s3Available && this.localFallbackEnabled) {
+    if (!this.s3Available && this.localStorageEnabled) {
       return await this.existsLocal(key);
     }
 
     try {
-      await s3Client.send(
+      await this.getS3Client().send(
         new HeadObjectCommand({
           Bucket: S3_BUCKET,
           Key: key,
@@ -453,12 +454,12 @@ export abstract class Storage {
       );
       return true;
     } catch (error) {
-      const shouldFallback = await this.maybeFallbackOnS3Error(
+      const shouldUseLocalStorage = await this.handleS3ErrorWithLocalStorage(
         "exists",
         key,
         error,
       );
-      if (shouldFallback) {
+      if (shouldUseLocalStorage) {
         return await this.existsLocal(key);
       }
       return false;
@@ -468,12 +469,12 @@ export abstract class Storage {
   static async getMetadata(
     key: string,
   ): Promise<{ size: number; contentType: string } | null> {
-    if (!this.s3Available && this.localFallbackEnabled) {
+    if (!this.s3Available && this.localStorageEnabled) {
       return await this.getMetadataLocal(key);
     }
 
     try {
-      const response = await s3Client.send(
+      const response = await this.getS3Client().send(
         new HeadObjectCommand({
           Bucket: S3_BUCKET,
           Key: key,
@@ -484,12 +485,12 @@ export abstract class Storage {
         contentType: response.ContentType || "application/octet-stream",
       };
     } catch (error) {
-      const shouldFallback = await this.maybeFallbackOnS3Error(
+      const shouldUseLocalStorage = await this.handleS3ErrorWithLocalStorage(
         "getMetadata",
         key,
         error,
       );
-      if (shouldFallback) {
+      if (shouldUseLocalStorage) {
         return await this.getMetadataLocal(key);
       }
       return null;

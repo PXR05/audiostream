@@ -15,10 +15,10 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-true}
       CORS_CREDENTIALS: ${CORS_CREDENTIALS:-true}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
-      S3_ENDPOINT: http://s3:9000
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
-      S3_BUCKET: ${S3_BUCKET:-audiostream}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET}
     volumes:
       - ./logs:/usr/src/app/logs:rw
       - ./uploads:/usr/src/app/uploads:rw
@@ -31,28 +31,29 @@ services:
       start_period: 40s
     restart: unless-stopped
 
-  s3:
-    image: rustfs/rustfs:latest
-    user: "0:0"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      RUSTFS_ADDRESS: 0.0.0.0:9000
-      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
-      RUSTFS_CONSOLE_ENABLE: "true"
-      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
-      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
-    volumes:
-      - ./rustfs-data:/data:rw
-      - ./rustfs-logs:/app/logs:rw
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    restart: unless-stopped
+  # Uncomment if you want to run the S3-compatible storage in production. Make sure to set the appropriate environment variables and persist the data.
+  # s3:
+  #   image: rustfs/rustfs:latest
+  #   user: "0:0"
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  #   environment:
+  #     RUSTFS_ADDRESS: 0.0.0.0:9000
+  #     RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+  #     RUSTFS_CONSOLE_ENABLE: "true"
+  #     RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
+  #     RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+  #   volumes:
+  #     - ./rustfs-data:/data:rw
+  #     - ./rustfs-logs:/app/logs:rw
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 40s
+  #   restart: unless-stopped
 
   db:
     image: postgres:17-alpine

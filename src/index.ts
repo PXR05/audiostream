@@ -37,20 +37,11 @@ if (cluster.isPrimary) {
   const tempMaxAgeHours = parseInt(process.env.TEMP_MAX_AGE_HOURS || "24", 10);
   await cleanupTemp(tempMaxAgeHours);
 
-  try {
-    await Storage.enableLocalFallback(
-      "S3 initialization failed during startup",
-    );
-    logger.warn(
-      `Continuing startup with local fallback storage at ${Storage.getLocalFallbackDir()}`,
-      { context: "STARTUP" },
-    );
-  } catch (fallbackError) {
-    logger.error("Failed to enable local fallback storage", fallbackError, {
-      context: "STARTUP",
-    });
-    process.exit(1);
-  }
+  await Storage.init();
+  logger.info(
+    `Storage initialized (local path: ${Storage.getLocalStorageDir()})`,
+    { context: "STARTUP" },
+  );
 
   try {
     await migrate();

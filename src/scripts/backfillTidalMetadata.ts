@@ -475,24 +475,24 @@ async function main() {
     { context: CONTEXT },
   );
 
-  if (!Storage.isLocalFallbackEnabled()) {
+  if (!Storage.isLocalStorageEnabled()) {
     try {
       await Storage.init();
     } catch (error) {
       try {
-        await Storage.enableLocalFallback(
+        await Storage.enableLocalStorageMode(
           "Storage init failed in Tidal metadata backfill",
         );
         logger.warn(
-          `Storage init failed; continuing backfill with local fallback at ${Storage.getLocalFallbackDir()}`,
+          `Storage init failed; continuing backfill with local storage at ${Storage.getLocalStorageDir()}`,
           {
             context: CONTEXT,
           },
         );
       } catch {
-        if (Storage.isLocalFallbackEnabled()) {
+        if (Storage.isLocalStorageEnabled()) {
           logger.warn(
-            "Storage init failed but local fallback is already enabled; continuing backfill",
+            "Storage init failed but local storage mode is already enabled; continuing backfill",
             {
               context: CONTEXT,
             },
