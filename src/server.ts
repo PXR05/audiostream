@@ -16,7 +16,7 @@ const app = new Elysia()
   .get("/", () => ({ message: ":)" }))
   .get("/health", () => ({ status: "ok", timestamp: new Date().toISOString() }))
   .onBeforeHandle(({ request, cookie }) => {
-    // if (process.env.NODE_ENV === "production") return;
+    if (process.env.NODE_ENV === "production") return;
 
     const headers = request.headers.toJSON();
     const cookies = cookie ?? {};
