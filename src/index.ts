@@ -8,7 +8,6 @@ import { logger } from "./utils/logger";
 import { Storage } from "./utils/storage";
 import { AuthService } from "./modules/auth/service";
 import migrate from "./scripts/migrate";
-import backupRustfsToUploads from "./scripts/backupRustfsToUploads";
 import backfillTidalMetadata from "./scripts/backfillTidalMetadata";
 
 if (cluster.isPrimary) {
@@ -70,24 +69,6 @@ if (cluster.isPrimary) {
     logger.error("Database migration failed", error, { context: "STARTUP" });
     console.error("Migration error:", error);
     process.exit(1);
-  }
-
-  try {
-    const backupExitCode = await backupRustfsToUploads();
-    if (backupExitCode === 0) {
-      logger.info("RustFS backup completed during startup", {
-        context: "STARTUP",
-      });
-    } else {
-      logger.warn(
-        `RustFS backup completed with non-zero exit code (${backupExitCode}) during startup`,
-        { context: "STARTUP" },
-      );
-    }
-  } catch (error) {
-    logger.error("RustFS backup failed during startup", error, {
-      context: "STARTUP",
-    });
   }
 
   try {

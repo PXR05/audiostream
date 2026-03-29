@@ -21,4 +21,5 @@ package-lock.json
 logs/
 
 rustfs-data/
+rustfs-data.bak/
 rustfs-logs/
