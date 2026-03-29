@@ -135,8 +135,20 @@ export abstract class Storage {
 
   private static resolveLocalPath(key: string): string {
     const safeKey = this.normalizeKey(key);
+    logger.debug(
+      `Resolving local path for key: ${key}, normalized: ${safeKey}`,
+      {
+        context: "STORAGE",
+      },
+    );
     const root = resolve(LOCAL_FALLBACK_DIR);
+    logger.debug(`Local fallback root directory: ${root}`, {
+      context: "STORAGE",
+    });
     const fullPath = resolve(root, ...safeKey.split("/").filter(Boolean));
+    logger.debug(`Resolved local path: ${fullPath}`, {
+      context: "STORAGE",
+    });
 
     if (fullPath !== root && !fullPath.startsWith(root + sep)) {
       throw new Error(`Invalid storage key path: ${key}`);

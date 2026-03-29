@@ -73,7 +73,7 @@ if (cluster.isPrimary) {
   await AuthService.seedAdminUser();
 
   if (process.env.NODE_ENV === "production") {
-    for (let i = 0; i < os.availableParallelism(); i++) cluster.fork();
+    // for (let i = 0; i < os.availableParallelism(); i++) cluster.fork();
   } else {
     await import("./server");
     logger.info(`Worker ${process.pid} started`);
