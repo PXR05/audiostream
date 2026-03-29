@@ -53,8 +53,8 @@ const s3Client = new S3Client({
 });
 
 export abstract class Storage {
-  private static localFallbackEnabled = false;
-  private static s3Available = true;
+  private static localFallbackEnabled = true;
+  private static s3Available = false;
   private static hasLoggedS3Fallback = false;
 
   static async init(): Promise<void> {
