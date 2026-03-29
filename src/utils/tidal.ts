@@ -46,6 +46,7 @@ interface TidalInfoResponse {
   data?: {
     isrc?: string;
   };
+  [key: string]: unknown;
 }
 
 interface TidalBTSManifest {
@@ -390,12 +391,48 @@ export async function getDownloadUrl(
   quality: string,
   signal?: AbortSignal,
 ): Promise<TidalDownloadInfo> {
-  const results = await Promise.any(
+  const settled = await Promise.allSettled(
     TIDAL_PROXY_APIS.map((api) =>
       fetchFromProxy(api, trackId, quality, signal),
     ),
   );
-  return results;
+
+  const candidates: TidalDownloadInfo[] = settled
+    .filter(
+      (result): result is PromiseFulfilledResult<TidalDownloadInfo> =>
+        result.status === "fulfilled",
+    )
+    .map((result) => result.value);
+
+  if (candidates.length === 0) {
+    const firstRejected = settled.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    throw (
+      (firstRejected?.reason as Error) ??
+      new Error("No valid Tidal download URL found")
+    );
+  }
+
+  const scored = candidates
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((a, b) => {
+      if (b.candidate.bitDepth !== a.candidate.bitDepth) {
+        return b.candidate.bitDepth - a.candidate.bitDepth;
+      }
+      if (b.candidate.sampleRate !== a.candidate.sampleRate) {
+        return b.candidate.sampleRate - a.candidate.sampleRate;
+      }
+      return a.index - b.index;
+    });
+
+  const selected = scored[0].candidate;
+  const isManifest = selected.url.startsWith("MANIFEST:");
+  console.info(
+    `[Tidal] Selected stream for track ${trackId}: ${selected.bitDepth}-bit ${selected.sampleRate}Hz (${isManifest ? "manifest" : "direct"}) from ${candidates.length} candidate(s)`,
+  );
+
+  return selected;
 }
 
 function clampSearchLimit(limit: number): number {
@@ -407,6 +444,356 @@ function buildTidalImageUrl(imageId: string | undefined, size = 640): string {
   if (!imageId) return "";
   const safeSize = Math.max(64, Math.min(1280, size));
   return `https://resources.tidal.com/images/${imageId.replace(/-/g, "/")}/${safeSize}x${safeSize}.jpg`;
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function asString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function asInteger(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string") {
+    const parsed = parseInt(value, 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const lowered = value.trim().toLowerCase();
+    if (lowered === "true") return true;
+    if (lowered === "false") return false;
+  }
+  return undefined;
+}
+
+function asCsv(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    const values = value
+      .map((entry) => {
+        if (typeof entry === "string") return entry.trim();
+        const obj = asObject(entry);
+        return asString(obj?.name) ?? "";
+      })
+      .filter((entry) => entry.length > 0);
+    return values.length > 0 ? values.join(", ") : undefined;
+  }
+  return asString(value);
+}
+
+function normalizeCoverUrl(rawCover: string | undefined): string | undefined {
+  if (!rawCover) return undefined;
+
+  if (/^https?:\/\//i.test(rawCover)) {
+    if (rawCover.includes("resources.tidal.com/images/")) {
+      return rawCover.replace(/\d+x\d+\.jpg$/i, "1280x1280.jpg");
+    }
+    return rawCover;
+  }
+
+  if (/^[a-z0-9-]+$/i.test(rawCover)) {
+    return buildTidalImageUrl(rawCover, 1280);
+  }
+
+  const imageId = rawCover
+    .replace(/^\/+/, "")
+    .replace(/\.jpg$/i, "")
+    .replace(/\//g, "-");
+
+  if (/^[a-z0-9-]+$/i.test(imageId)) {
+    return buildTidalImageUrl(imageId, 1280);
+  }
+
+  return undefined;
+}
+
+function extractArtistName(record: Record<string, unknown> | null): string {
+  if (!record) return "";
+
+  const artistValue = record.artist;
+  if (typeof artistValue === "string") return artistValue;
+
+  const artistObject = asObject(artistValue);
+  const artistName = asString(artistObject?.name);
+  if (artistName) return artistName;
+
+  const artistsValue = record.artists;
+  if (!Array.isArray(artistsValue)) return "";
+
+  for (const rawArtist of artistsValue) {
+    const artist = asObject(rawArtist);
+    const artistType = asString(artist?.type);
+    const name = asString(artist?.name);
+    if (artistType === "MAIN" && name) return name;
+  }
+
+  for (const rawArtist of artistsValue) {
+    const artist = asObject(rawArtist);
+    const name = asString(artist?.name);
+    if (name) return name;
+  }
+
+  return "";
+}
+
+function extractAlbumArtistName(
+  record: Record<string, unknown> | null,
+): string {
+  if (!record) return "";
+
+  const albumArtist = asString(record.artistName);
+  if (albumArtist) return albumArtist;
+
+  const artist = record.artist;
+  if (typeof artist === "string") return artist;
+
+  const artistObj = asObject(artist);
+  const artistName = asString(artistObj?.name);
+  if (artistName) return artistName;
+
+  const artistsValue = record.artists;
+  if (!Array.isArray(artistsValue)) return "";
+
+  for (const rawArtist of artistsValue) {
+    const parsed = asObject(rawArtist);
+    const name = asString(parsed?.name);
+    if (name) return name;
+  }
+
+  return "";
+}
+
+function extractYearFromDate(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const match = value.match(/^(\d{4})/);
+  if (!match) return undefined;
+  const year = parseInt(match[1], 10);
+  return Number.isFinite(year) ? year : undefined;
+}
+
+function extractTrackInfo(
+  body: unknown,
+  trackId: number,
+): TidalTrackInfo | null {
+  const root = asObject(body);
+  if (!root) return null;
+
+  const data = asObject(root.data);
+  const track =
+    asObject(root.track) ??
+    asObject(data?.track) ??
+    asObject(data?.item) ??
+    asObject(root.item);
+
+  const source = track ?? data ?? root;
+
+  const title =
+    asString(source.title) ??
+    asString(source.name) ??
+    asString(track?.title) ??
+    asString(track?.name);
+  if (!title) return null;
+
+  const albumObj =
+    asObject(source.album) ??
+    asObject(track?.album) ??
+    asObject(data?.album) ??
+    asObject(root.album);
+
+  const artist =
+    extractArtistName(source) ||
+    extractArtistName(track) ||
+    extractArtistName(data) ||
+    extractArtistName(root);
+
+  const album =
+    asString(albumObj?.title) ??
+    asString(source.albumTitle) ??
+    asString(track?.albumTitle);
+
+  const albumArtist =
+    extractAlbumArtistName(albumObj) ||
+    asString(source.albumArtist) ||
+    asString(track?.albumArtist) ||
+    extractAlbumArtistName(source) ||
+    extractAlbumArtistName(track);
+
+  const trackNumber =
+    asInteger(source.trackNumber) ??
+    asInteger(source.trackNumberOnVolume) ??
+    asInteger(source.trackPosition) ??
+    asInteger(source.position) ??
+    asInteger(track?.trackNumber) ??
+    asInteger(track?.trackNumberOnVolume) ??
+    asInteger(track?.trackPosition) ??
+    asInteger(track?.position);
+
+  const discNumber =
+    asInteger(source.volumeNumber) ??
+    asInteger(source.discNumber) ??
+    asInteger(track?.volumeNumber) ??
+    asInteger(track?.discNumber);
+
+  const releaseDate =
+    asString(source.releaseDate) ??
+    asString(source.streamStartDate) ??
+    asString(source.albumReleaseDate) ??
+    asString(track?.releaseDate) ??
+    asString(albumObj?.releaseDate);
+
+  const year =
+    asInteger(source.year) ??
+    asInteger(track?.year) ??
+    asInteger(albumObj?.year) ??
+    extractYearFromDate(releaseDate);
+
+  const genre =
+    asCsv(source.genre) ??
+    asCsv(track?.genre) ??
+    asCsv(albumObj?.genre) ??
+    asCsv(albumObj?.genres);
+
+  const composer =
+    asCsv(source.composer) ??
+    asCsv(source.composers) ??
+    asCsv(track?.composer) ??
+    asCsv(track?.composers);
+
+  const copyright =
+    asString(source.copyright) ??
+    asString(track?.copyright) ??
+    asString(albumObj?.copyright);
+
+  const label =
+    asString(source.label) ??
+    asString(track?.label) ??
+    asString(albumObj?.label) ??
+    asString(asObject(albumObj?.label)?.name);
+
+  const upc =
+    asString(source.upc) ?? asString(track?.upc) ?? asString(albumObj?.upc);
+
+  const explicit =
+    asBoolean(source.explicit) ??
+    asBoolean(track?.explicit) ??
+    asBoolean(source.parentalWarning) ??
+    asBoolean(track?.parentalWarning);
+
+  const isrc =
+    normalizeIsrc(
+      asString(source.isrc) ?? asString(track?.isrc) ?? asString(data?.isrc),
+    ) ?? undefined;
+
+  const cover =
+    asString(albumObj?.cover) ??
+    asString(albumObj?.image) ??
+    asString(source.cover) ??
+    asString(track?.cover);
+
+  return {
+    id: trackId,
+    title,
+    artist,
+    album,
+    albumArtist: albumArtist || undefined,
+    trackNumber,
+    discNumber,
+    releaseDate,
+    year,
+    genre,
+    composer,
+    copyright,
+    label,
+    upc,
+    explicit,
+    isrc,
+    albumCoverUrl: normalizeCoverUrl(cover),
+  };
+}
+
+async function fetchTrackInfoFromProxy(
+  api: string,
+  trackId: number,
+  signal?: AbortSignal,
+): Promise<TidalTrackInfo> {
+  let lastErr: Error = new Error("No attempts made");
+  let retryDelay = TIDAL_RETRY_DELAY_MS;
+
+  for (let attempt = 0; attempt <= TIDAL_MAX_RETRIES; attempt++) {
+    if (signal?.aborted) throw new Error("Download cancelled");
+
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, retryDelay));
+      retryDelay *= 2;
+    }
+
+    const reqUrl = `${api}/info/?id=${trackId}`;
+
+    try {
+      const resp = await fetch(reqUrl, {
+        signal: signal ?? AbortSignal.timeout(TIDAL_API_TIMEOUT_MS),
+      });
+
+      if (resp.status === 429) {
+        await resp.body?.cancel();
+        lastErr = new Error("Rate limited");
+        retryDelay = 2000;
+        continue;
+      }
+
+      if (resp.status >= 500) {
+        await resp.body?.cancel();
+        lastErr = new Error(`HTTP ${resp.status}`);
+        continue;
+      }
+
+      if (!resp.ok) {
+        await resp.body?.cancel();
+        throw new Error(`HTTP ${resp.status}`);
+      }
+
+      const body: unknown = await resp.json();
+      const info = extractTrackInfo(body, trackId);
+      if (!info) {
+        throw new Error("Track info not found");
+      }
+      return info;
+    } catch (e) {
+      const err = e as Error;
+      if (err.name === "AbortError") {
+        throw err;
+      }
+
+      lastErr = err;
+      const msg = err.message.toLowerCase();
+      if (
+        msg.includes("timeout") ||
+        msg.includes("reset") ||
+        msg.includes("econnrefused") ||
+        msg.includes("eof") ||
+        msg.includes("network") ||
+        msg.includes("fetch")
+      ) {
+        continue;
+      }
+      break;
+    }
+  }
+
+  throw lastErr;
 }
 
 function getTrackArtistName(track: TidalSearchTrack): string {
@@ -765,12 +1152,33 @@ export interface TidalTrackInfo {
   id: number;
   title: string;
   artist: string;
+  album?: string;
+  albumArtist?: string;
+  trackNumber?: number;
+  discNumber?: number;
+  releaseDate?: string;
+  year?: number;
+  genre?: string;
+  composer?: string;
+  copyright?: string;
+  label?: string;
+  upc?: string;
+  explicit?: boolean;
+  isrc?: string;
   albumCoverUrl?: string;
 }
 
 export async function getTidalTrackInfo(
   trackId: number,
 ): Promise<TidalTrackInfo | null> {
+  const attempts = TIDAL_PROXY_APIS.map((api) =>
+    fetchTrackInfoFromProxy(api, trackId),
+  );
+
+  try {
+    return await Promise.any(attempts);
+  } catch {}
+
   try {
     const tidalUrl = `https://tidal.com/browse/track/${trackId}`;
     const apiUrl = `https://api.song.link/v1-alpha.1/links?url=${encodeURIComponent(tidalUrl)}`;
@@ -780,17 +1188,17 @@ export async function getTidalTrackInfo(
     const data = await resp.json();
     const entityKey = `TIDAL_SONG::${trackId}`;
     const entity = data.entitiesByUniqueId?.[entityKey];
-    if (!entity?.title) return null;
+    const title = asString(entity?.title);
+    if (!title) return null;
 
-    let thumbnailUrl: string | undefined = entity.thumbnailUrl;
-    if (thumbnailUrl?.includes("resources.tidal.com/images/")) {
-      thumbnailUrl = thumbnailUrl.replace(/\d+x\d+\.jpg$/, "1280x1280.jpg");
-    }
+    const thumbnailUrl = normalizeCoverUrl(asString(entity?.thumbnailUrl));
 
     return {
       id: trackId,
-      title: entity.title as string,
-      artist: (entity.artistName as string) || "",
+      title,
+      artist: asString(entity?.artistName) ?? "",
+      album: asString(entity?.albumName),
+      albumArtist: asString(entity?.artistName) ?? undefined,
       albumCoverUrl: thumbnailUrl,
     };
   } catch {

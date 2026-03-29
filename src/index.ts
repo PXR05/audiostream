@@ -2,14 +2,14 @@ import { mkdir } from "fs/promises";
 import cluster from "node:cluster";
 import os from "node:os";
 import process from "node:process";
-import migrate from "./scripts/migrate";
-import migrateToS3 from "./scripts/migrateToS3";
 import cleanupTemp from "./scripts/cleanupTemp";
-import backfillIsrc from "./scripts/backfillIsrc";
-import { TEMP_DIR } from "./utils/helpers";
+import { TEMP_DIR, UPLOADS_DIR } from "./utils/helpers";
 import { logger } from "./utils/logger";
-import { AuthService } from "./modules/auth/service";
 import { Storage } from "./utils/storage";
+import { AuthService } from "./modules/auth/service";
+import migrate from "./scripts/migrate";
+import backupRustfsToUploads from "./scripts/backupRustfsToUploads";
+import backfillTidalMetadata from "./scripts/backfillTidalMetadata";
 
 if (cluster.isPrimary) {
   try {
@@ -19,6 +19,18 @@ if (cluster.isPrimary) {
     });
   } catch (error) {
     logger.error("Failed to create temp directory", error, {
+      context: "STARTUP",
+    });
+    process.exit(1);
+  }
+
+  try {
+    await mkdir(UPLOADS_DIR, { recursive: true });
+    logger.info(`Uploads directory ready: ${UPLOADS_DIR}`, {
+      context: "STARTUP",
+    });
+  } catch (error) {
+    logger.error("Failed to create uploads directory", error, {
       context: "STARTUP",
     });
     process.exit(1);
@@ -34,15 +46,21 @@ if (cluster.isPrimary) {
     logger.error("Failed to initialize S3 storage", error, {
       context: "STARTUP",
     });
-    process.exit(1);
-  }
 
-  try {
-    const deleteAfterMigration =
-      process.env.S3_DELETE_AFTER_MIGRATION === "true";
-    await migrateToS3(deleteAfterMigration);
-  } catch (error) {
-    logger.error("S3 migration failed", error, { context: "STARTUP" });
+    try {
+      await Storage.enableLocalFallback(
+        "S3 initialization failed during startup",
+      );
+      logger.warn(
+        `Continuing startup with local fallback storage at ${Storage.getLocalFallbackDir()}`,
+        { context: "STARTUP" },
+      );
+    } catch (fallbackError) {
+      logger.error("Failed to enable local fallback storage", fallbackError, {
+        context: "STARTUP",
+      });
+      process.exit(1);
+    }
   }
 
   try {
@@ -55,10 +73,32 @@ if (cluster.isPrimary) {
   }
 
   try {
-    await backfillIsrc();
-    logger.info("ISRC backfill completed", { context: "STARTUP" });
+    const backupExitCode = await backupRustfsToUploads();
+    if (backupExitCode === 0) {
+      logger.info("RustFS backup completed during startup", {
+        context: "STARTUP",
+      });
+    } else {
+      logger.warn(
+        `RustFS backup completed with non-zero exit code (${backupExitCode}) during startup`,
+        { context: "STARTUP" },
+      );
+    }
   } catch (error) {
-    logger.error("ISRC backfill failed", error, { context: "STARTUP" });
+    logger.error("RustFS backup failed during startup", error, {
+      context: "STARTUP",
+    });
+  }
+
+  try {
+    await backfillTidalMetadata();
+    logger.info("Tidal metadata backfill completed during startup", {
+      context: "STARTUP",
+    });
+  } catch (error) {
+    logger.error("Tidal metadata backfill failed during startup", error, {
+      context: "STARTUP",
+    });
   }
 
   await AuthService.seedAdminUser();

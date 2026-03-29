@@ -1,6 +1,6 @@
 import { existsSync, unlinkSync, renameSync } from "fs";
 import { stat } from "fs/promises";
-import { join } from "path";
+import { extname, join } from "path";
 import jimp from "jimp";
 import type { AudioModel } from "./model";
 import {
@@ -282,23 +282,177 @@ export abstract class DownloadService {
 
   private static async embedMetadataWithFfmpeg(
     filePath: string,
-    metadata: { title?: string; artist?: string; album?: string },
+    metadata: {
+      title?: string;
+      artist?: string;
+      album?: string;
+      albumArtist?: string;
+      trackNumber?: number;
+      discNumber?: number;
+      releaseDate?: string;
+      year?: number;
+      genre?: string;
+      composer?: string;
+      copyright?: string;
+      label?: string;
+      upc?: string;
+      explicit?: boolean;
+      comment?: string;
+      isrc?: string;
+      coverImagePath?: string;
+    },
   ): Promise<void> {
-    const outputPath = `${filePath}.tagged.tmp`;
-    try {
-      const args = ["ffmpeg", "-i", filePath];
-      if (metadata.title) args.push("-metadata", `title=${metadata.title}`);
-      if (metadata.artist) args.push("-metadata", `artist=${metadata.artist}`);
-      if (metadata.album) args.push("-metadata", `album=${metadata.album}`);
-      args.push("-c", "copy", "-y", outputPath);
+    const ext = extname(filePath);
+    const outputPath = ext ? `${filePath}.tagged${ext}` : `${filePath}.tagged`;
+
+    const metadataPairs: Array<[string, string]> = [];
+    const addPair = (key: string, value: unknown) => {
+      if (value === undefined || value === null) return;
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (trimmed.length === 0) return;
+        metadataPairs.push([key, trimmed]);
+        return;
+      }
+      if (typeof value === "number" && Number.isFinite(value)) {
+        metadataPairs.push([key, String(value)]);
+        return;
+      }
+      if (typeof value === "boolean") {
+        metadataPairs.push([key, value ? "1" : "0"]);
+      }
+    };
+
+    addPair("title", metadata.title);
+    addPair("artist", metadata.artist);
+    addPair("album", metadata.album);
+    addPair("album_artist", metadata.albumArtist);
+    addPair("track", metadata.trackNumber);
+    addPair("disc", metadata.discNumber);
+    addPair("date", metadata.releaseDate);
+    addPair("year", metadata.year);
+    addPair("genre", metadata.genre);
+    addPair("composer", metadata.composer);
+    addPair("copyright", metadata.copyright);
+    addPair("publisher", metadata.label);
+    addPair("upc", metadata.upc);
+    addPair("isrc", metadata.isrc);
+    addPair(
+      "comment",
+      metadata.comment ?? (metadata.explicit ? "Explicit" : undefined),
+    );
+
+    const runTagging = async (
+      coverPath: string | undefined,
+    ): Promise<{ ok: boolean; stderr: string }> => {
+      const args = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        filePath,
+      ];
+
+      if (coverPath && existsSync(coverPath)) {
+        args.push("-i", coverPath, "-map", "0:a", "-map", "1:v");
+      }
+
+      args.push("-map_metadata", "0", "-c:a", "copy");
+
+      if (coverPath && existsSync(coverPath)) {
+        args.push(
+          "-c:v",
+          "mjpeg",
+          "-disposition:v",
+          "attached_pic",
+          "-metadata:s:v",
+          "title=Cover",
+          "-metadata:s:v",
+          "comment=Cover (front)",
+        );
+      }
+
+      for (const [key, value] of metadataPairs) {
+        args.push("-metadata", `${key}=${value}`);
+      }
+
+      args.push("-y", outputPath);
+
       const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
-      const exitCode = await proc.exited;
-      if (exitCode === 0 && existsSync(outputPath))
+      const [exitCode, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stderr).text(),
+      ]);
+      return {
+        ok: exitCode === 0 && existsSync(outputPath),
+        stderr,
+      };
+    };
+
+    try {
+      const coverPath = metadata.coverImagePath;
+      let tagged = await runTagging(coverPath);
+
+      if (!tagged.ok && coverPath) {
+        if (existsSync(outputPath)) unlinkSync(outputPath);
+        logger.warn(
+          `Cover-art embedding failed, retrying without cover: ${tagged.stderr.substring(0, 300)}`,
+          { context: "TIDAL" },
+        );
+        tagged = await runTagging(undefined);
+      }
+
+      if (tagged.ok) {
+        if (existsSync(filePath)) unlinkSync(filePath);
         renameSync(outputPath, filePath);
+      } else {
+        logger.warn(
+          `Failed to embed metadata with ffmpeg: ${tagged.stderr.substring(0, 300)}`,
+          {
+            context: "TIDAL",
+          },
+        );
+      }
     } catch {
       logger.warn("Failed to embed metadata with ffmpeg", { context: "TIDAL" });
     } finally {
       if (existsSync(outputPath)) unlinkSync(outputPath);
+    }
+  }
+
+  private static async downloadCoverForEmbedding(
+    coverUrl: string,
+    audioId: string,
+  ): Promise<string | null> {
+    const tempCoverPath = join(TEMP_DIR, `${audioId}.cover.jpg`);
+    try {
+      const resp = await fetch(coverUrl, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!resp.ok) return null;
+
+      const image = await jimp.read(Buffer.from(await resp.arrayBuffer()));
+      const w = image.getWidth();
+      const h = image.getHeight();
+      const s = Math.min(w, h);
+
+      await image
+        .crop(Math.floor((w - s) / 2), Math.floor((h - s) / 2), s, s)
+        .quality(100)
+        .writeAsync(tempCoverPath);
+
+      return tempCoverPath;
+    } catch (error) {
+      logger.error("Cover art download for embedding failed", error, {
+        context: "TIDAL",
+      });
+      if (existsSync(tempCoverPath)) {
+        try {
+          unlinkSync(tempCoverPath);
+        } catch {}
+      }
+      return null;
     }
   }
 
@@ -952,6 +1106,10 @@ export abstract class DownloadService {
     try {
       const downloadInfo = await getDownloadUrl(trackId, quality, signal);
       if (signal?.aborted) throw new Error("Download was cancelled");
+      sendEvent({
+        type: "info",
+        message: `Selected Tidal stream: ${downloadInfo.bitDepth}-bit / ${downloadInfo.sampleRate} Hz`,
+      });
       sendEvent({ type: "info", message: "Starting download..." });
 
       const onProgress = (downloaded: number, total: number) => {
@@ -1012,11 +1170,37 @@ export abstract class DownloadService {
 
       const trackInfo = await trackInfoPromise;
       const trackIsrc = await trackIsrcPromise;
-      if (trackInfo) {
+      let embeddedCoverPath: string | null = null;
+      if (trackInfo?.albumCoverUrl) {
+        embeddedCoverPath = await this.downloadCoverForEmbedding(
+          trackInfo.albumCoverUrl,
+          id,
+        );
+      }
+
+      if (trackInfo || trackIsrc || embeddedCoverPath) {
         await this.embedMetadataWithFfmpeg(tempFilePath, {
-          title: trackInfo.title,
-          artist: trackInfo.artist,
+          title: trackInfo?.title,
+          artist: trackInfo?.artist,
+          album: trackInfo?.album,
+          albumArtist: trackInfo?.albumArtist,
+          trackNumber: trackInfo?.trackNumber,
+          discNumber: trackInfo?.discNumber,
+          releaseDate: trackInfo?.releaseDate,
+          year: trackInfo?.year,
+          genre: trackInfo?.genre,
+          composer: trackInfo?.composer,
+          copyright: trackInfo?.copyright,
+          label: trackInfo?.label,
+          upc: trackInfo?.upc,
+          explicit: trackInfo?.explicit,
+          isrc: trackIsrc ?? trackInfo?.isrc ?? undefined,
+          coverImagePath: embeddedCoverPath ?? undefined,
         });
+      }
+
+      if (embeddedCoverPath && existsSync(embeddedCoverPath)) {
+        unlinkSync(embeddedCoverPath);
       }
 
       const [stats, extractedMetadata] = await Promise.all([
@@ -1030,13 +1214,21 @@ export abstract class DownloadService {
           ...extractedMetadata,
           title: extractedMetadata.title || trackInfo?.title,
           artist: extractedMetadata.artist || trackInfo?.artist,
+          album: extractedMetadata.album || trackInfo?.album,
         };
       } else if (trackInfo) {
-        finalMetadata = { title: trackInfo.title, artist: trackInfo.artist };
+        finalMetadata = {
+          title: trackInfo.title,
+          artist: trackInfo.artist,
+          album: trackInfo.album,
+        };
       }
 
       const resolvedIsrc =
-        trackIsrc ?? normalizeIsrc(extractedMetadata?.isrc) ?? NO_ISRC_SENTINEL;
+        trackIsrc ??
+        trackInfo?.isrc ??
+        normalizeIsrc(extractedMetadata?.isrc) ??
+        NO_ISRC_SENTINEL;
 
       let extractedImage = trackInfo?.albumCoverUrl
         ? await this.downloadCoverFromUrl(trackInfo.albumCoverUrl, id)

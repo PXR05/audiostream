@@ -4,6 +4,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "bun run --watch src/index.ts",
+    "tidal:metadata:backfill": "bun run src/scripts/backfillTidalMetadata.ts",
+    "backup:rustfs:uploads": "bun run src/scripts/backupRustfsToUploads.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
