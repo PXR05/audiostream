@@ -20,8 +20,6 @@ const S3_SECRET_KEY = process.env.S3_SECRET_KEY || "rustfsadmin";
 const S3_BUCKET = process.env.S3_BUCKET || "audiostream";
 const LOCAL_FALLBACK_DIR =
   process.env.STORAGE_LOCAL_FALLBACK_DIR || UPLOADS_DIR;
-const ALLOW_LOCAL_FALLBACK =
-  process.env.STORAGE_LOCAL_FALLBACK_ENABLED !== "false";
 
 const CONTENT_TYPES: Record<string, string> = {
   ".mp3": "audio/mpeg",
@@ -90,12 +88,6 @@ export abstract class Storage {
   }
 
   static async enableLocalFallback(reason?: string): Promise<void> {
-    if (!ALLOW_LOCAL_FALLBACK) {
-      throw new Error(
-        "Local fallback is disabled (STORAGE_LOCAL_FALLBACK_ENABLED=false)",
-      );
-    }
-
     await mkdir(LOCAL_FALLBACK_DIR, { recursive: true });
 
     this.localFallbackEnabled = true;

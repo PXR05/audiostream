@@ -38,30 +38,18 @@ if (cluster.isPrimary) {
   await cleanupTemp(tempMaxAgeHours);
 
   try {
-    if (process.env.S3_ENABLE_FALLBACK === "true") {
-      throw new Error("S3 fallback enabled, skipping S3 initialization");
-    }
-    await Storage.init();
-    logger.info("S3 storage initialized", { context: "STARTUP" });
-  } catch (error) {
-    logger.error("Failed to initialize S3 storage", error, {
+    await Storage.enableLocalFallback(
+      "S3 initialization failed during startup",
+    );
+    logger.warn(
+      `Continuing startup with local fallback storage at ${Storage.getLocalFallbackDir()}`,
+      { context: "STARTUP" },
+    );
+  } catch (fallbackError) {
+    logger.error("Failed to enable local fallback storage", fallbackError, {
       context: "STARTUP",
     });
-
-    try {
-      await Storage.enableLocalFallback(
-        "S3 initialization failed during startup",
-      );
-      logger.warn(
-        `Continuing startup with local fallback storage at ${Storage.getLocalFallbackDir()}`,
-        { context: "STARTUP" },
-      );
-    } catch (fallbackError) {
-      logger.error("Failed to enable local fallback storage", fallbackError, {
-        context: "STARTUP",
-      });
-      process.exit(1);
-    }
+    process.exit(1);
   }
 
   try {
@@ -76,7 +64,7 @@ if (cluster.isPrimary) {
   await AuthService.seedAdminUser();
 
   if (process.env.NODE_ENV === "production") {
-    // for (let i = 0; i < os.availableParallelism(); i++) cluster.fork();
+    for (let i = 0; i < os.availableParallelism(); i++) cluster.fork();
   } else {
     await import("./server");
     logger.info(`Worker ${process.pid} started`);
