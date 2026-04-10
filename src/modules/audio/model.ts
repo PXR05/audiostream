@@ -72,6 +72,7 @@ export namespace AudioModel {
     duration: t.Optional(t.Number()),
     bitrate: t.Optional(t.Number()),
     sampleRate: t.Optional(t.Number()),
+    bitDepth: t.Optional(t.Number()),
     channels: t.Optional(t.Number()),
     format: t.Optional(t.String()),
   });

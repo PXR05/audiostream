@@ -4,10 +4,13 @@ import { join } from "path";
 import { TEMP_DIR } from "../utils/helpers";
 import { logger } from "../utils/logger";
 
-const DEFAULT_MAX_AGE_HOURS = 24;
+const DEFAULT_MAX_AGE_HOURS = parseInt(
+  process.env.TEMP_MAX_AGE_HOURS || "24",
+  10,
+);
 
 export async function cleanupTemp(
-  maxAgeHours = DEFAULT_MAX_AGE_HOURS
+  maxAgeHours = DEFAULT_MAX_AGE_HOURS,
 ): Promise<void> {
   if (!existsSync(TEMP_DIR)) {
     return;
@@ -55,7 +58,7 @@ export async function cleanupTemp(
   if (deleted > 0 || errors > 0) {
     logger.info(
       `Temp cleanup: ${deleted} deleted, ${kept} kept, ${errors} errors`,
-      { context: "CLEANUP" }
+      { context: "CLEANUP" },
     );
   }
 }

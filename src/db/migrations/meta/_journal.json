@@ -43,6 +43,13 @@
       "when": 1775692800000,
       "tag": "0005_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1775779200000,
+      "tag": "0006_bit_depth",
+      "breakpoints": true
     }
   ]
 }

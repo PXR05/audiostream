@@ -342,7 +342,9 @@ export abstract class AudioRepository {
         `.as("score"),
       })
       .from(audioFiles)
-      .where(and(this.activeAudioCondition, ilike(audioFiles.title, searchPattern)));
+      .where(
+        and(this.activeAudioCondition, ilike(audioFiles.title, searchPattern)),
+      );
 
     const artistQuery = db
       .selectDistinct({
@@ -374,7 +376,9 @@ export abstract class AudioRepository {
         `.as("score"),
       })
       .from(audioFiles)
-      .where(and(this.activeAudioCondition, ilike(audioFiles.album, searchPattern)));
+      .where(
+        and(this.activeAudioCondition, ilike(audioFiles.album, searchPattern)),
+      );
 
     const results = await titleQuery
       .unionAll(artistQuery)
@@ -426,7 +430,9 @@ export abstract class AudioRepository {
         ),
     ]);
 
-    return [...new Set([...deletedFiles, ...deletedUserLinks].map((row) => row.id))];
+    return [
+      ...new Set([...deletedFiles, ...deletedUserLinks].map((row) => row.id)),
+    ];
   }
 
   static toAudioModel(dbFile: AudioFile): AudioModel.audioFile {
@@ -449,6 +455,7 @@ export abstract class AudioRepository {
         duration: dbFile.duration ?? undefined,
         bitrate: dbFile.bitrate ?? undefined,
         sampleRate: dbFile.sampleRate ?? undefined,
+        bitDepth: dbFile.bitDepth ?? undefined,
         channels: dbFile.channels ?? undefined,
         format: dbFile.format ?? undefined,
       },
@@ -484,6 +491,7 @@ export abstract class AudioRepository {
       duration: metadata?.duration ?? null,
       bitrate: metadata?.bitrate ?? null,
       sampleRate: metadata?.sampleRate ?? null,
+      bitDepth: metadata?.bitDepth ?? 0,
       channels: metadata?.channels ?? null,
       format: metadata?.format ?? null,
     };

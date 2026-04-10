@@ -1228,12 +1228,18 @@ export abstract class DownloadService {
           title: extractedMetadata.title || trackInfo?.title,
           artist: extractedMetadata.artist || trackInfo?.artist,
           album: extractedMetadata.album || trackInfo?.album,
+          bitDepth: extractedMetadata.bitDepth ?? downloadInfo.bitDepth,
         };
       } else if (trackInfo) {
         finalMetadata = {
           title: trackInfo.title,
           artist: trackInfo.artist,
           album: trackInfo.album,
+          bitDepth: downloadInfo.bitDepth,
+        };
+      } else {
+        finalMetadata = {
+          bitDepth: downloadInfo.bitDepth,
         };
       }
 

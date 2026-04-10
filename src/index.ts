@@ -8,8 +8,9 @@ import { logger } from "./utils/logger";
 import { Storage } from "./utils/storage";
 import { AuthService } from "./modules/auth/service";
 import migrate from "./scripts/migrate";
+import backfillBitDepth from "./scripts/backfillBitDepth";
 
-if (cluster.isPrimary) {
+async function setupDirectories() {
   try {
     await mkdir(TEMP_DIR, { recursive: true });
     logger.info(`Temp directory ready: ${TEMP_DIR}`, {
@@ -33,9 +34,12 @@ if (cluster.isPrimary) {
     });
     process.exit(1);
   }
+}
 
-  const tempMaxAgeHours = parseInt(process.env.TEMP_MAX_AGE_HOURS || "24", 10);
-  await cleanupTemp(tempMaxAgeHours);
+if (cluster.isPrimary) {
+  await setupDirectories();
+
+  await cleanupTemp();
 
   await Storage.init();
   logger.info(
@@ -53,6 +57,8 @@ if (cluster.isPrimary) {
   }
 
   await AuthService.seedAdminUser();
+
+  await backfillBitDepth();
 
   if (process.env.NODE_ENV === "production") {
     for (let i = 0; i < os.availableParallelism(); i++) cluster.fork();

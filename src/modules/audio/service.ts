@@ -70,6 +70,7 @@ export abstract class AudioService {
         duration: metadata.format.duration,
         bitrate: metadata.format.bitrate,
         sampleRate: metadata.format.sampleRate,
+        bitDepth: metadata.format.bitsPerSample,
         channels: metadata.format.numberOfChannels,
         format: metadata.format.container,
       };
@@ -346,7 +347,10 @@ export abstract class AudioService {
     id: string,
     userId: string,
   ): Promise<AudioModel.deleteResponse> {
-    const userLink = await AudioFileUserRepository.findByAudioAndUser(id, userId);
+    const userLink = await AudioFileUserRepository.findByAudioAndUser(
+      id,
+      userId,
+    );
     if (!userLink) {
       throw status(403, "You don't have access to delete this file");
     }
@@ -355,8 +359,16 @@ export abstract class AudioService {
     const deletedAt = new Date();
 
     if (userAudioMap.length > 1) {
-      await AudioFileUserRepository.softDeleteByAudioAndUser(id, userId, deletedAt);
-      await PlaylistRepository.softDeleteItemsByAudioForUser(id, userId, deletedAt);
+      await AudioFileUserRepository.softDeleteByAudioAndUser(
+        id,
+        userId,
+        deletedAt,
+      );
+      await PlaylistRepository.softDeleteItemsByAudioForUser(
+        id,
+        userId,
+        deletedAt,
+      );
       return { success: true, message: "File removed from your library" };
     }
 

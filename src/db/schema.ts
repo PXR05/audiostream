@@ -27,6 +27,7 @@ export const audioFiles = pgTable(
     duration: real("duration"),
     bitrate: real("bitrate"),
     sampleRate: integer("sample_rate"),
+    bitDepth: integer("bit_depth").default(0).notNull(),
     channels: integer("channels"),
     format: text("format"),
     extra: text("extra"),

@@ -405,6 +405,7 @@ async function processTrack(row: AudioFile): Promise<"updated" | "skipped"> {
       duration: extractedMetadata?.duration ?? row.duration,
       bitrate: extractedMetadata?.bitrate ?? row.bitrate,
       sampleRate: extractedMetadata?.sampleRate ?? row.sampleRate,
+      bitDepth: extractedMetadata?.bitDepth ?? row.bitDepth,
       channels: extractedMetadata?.channels ?? row.channels,
       format: extractedMetadata?.format ?? row.format,
       imageFile: extractedImage ?? row.imageFile,
