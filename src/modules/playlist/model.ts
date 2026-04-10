@@ -46,8 +46,14 @@ export namespace PlaylistModel {
       ]),
     ),
     limit: t.Optional(t.Number({ minimum: 1 })),
+    lastFetchedAt: t.Optional(t.Number()),
   });
   export type listQuery = typeof listQuery.static;
+
+  export const detailQuery = t.Object({
+    lastFetchedAt: t.Optional(t.Number()),
+  });
+  export type detailQuery = typeof detailQuery.static;
 
   export const playlistItem = t.Object({
     id: t.String(),
@@ -121,11 +127,13 @@ export namespace PlaylistModel {
 
   export const listResponse = t.Object({
     playlists: t.Array(playlist),
+    deletedIds: t.Array(t.String()),
   });
   export type listResponse = typeof listResponse.static;
 
   export const detailResponse = t.Object({
     playlist: playlistDetail,
+    deletedItemIds: t.Array(t.String()),
   });
   export type detailResponse = typeof detailResponse.static;
 

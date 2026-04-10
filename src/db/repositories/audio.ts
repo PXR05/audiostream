@@ -5,11 +5,31 @@ import {
   type AudioFile,
   audioFileUsers,
 } from "../schema";
-import { eq, asc, desc, sql, or, ilike, count, and, gt } from "drizzle-orm";
+import {
+  eq,
+  asc,
+  desc,
+  sql,
+  or,
+  ilike,
+  count,
+  and,
+  gt,
+  isNull,
+} from "drizzle-orm";
 import type { AudioModel } from "../../modules/audio/model";
 import { normalizeIsrc } from "../../utils/isrc";
 
 export abstract class AudioRepository {
+  private static activeAudioCondition = isNull(audioFiles.deletedAt);
+
+  private static activeUserAccessCondition(userId: string) {
+    return or(
+      and(eq(audioFileUsers.userId, userId), isNull(audioFileUsers.deletedAt)),
+      eq(audioFiles.isPublic, 1),
+    )!;
+  }
+
   static async create(data: NewAudioFile): Promise<AudioFile> {
     const result = await db.insert(audioFiles).values(data).returning();
     return result[0];
@@ -58,7 +78,8 @@ export abstract class AudioRepository {
 
     if (userId) {
       const whereConditions = [
-        or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
+        this.activeAudioCondition,
+        this.activeUserAccessCondition(userId),
       ];
 
       if (options?.lastFetchedAt) {
@@ -103,11 +124,15 @@ export abstract class AudioRepository {
     const files = await db
       .select()
       .from(audioFiles)
+      .where(this.activeAudioCondition)
       .orderBy(orderBy)
       .limit(limit)
       .offset(offset);
 
-    const countResult = await db.select({ count: count() }).from(audioFiles);
+    const countResult = await db
+      .select({ count: count() })
+      .from(audioFiles)
+      .where(this.activeAudioCondition);
     const total = countResult[0]?.count ?? 0;
 
     return { files, total };
@@ -125,7 +150,8 @@ export abstract class AudioRepository {
         .where(
           and(
             eq(audioFiles.id, id),
-            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
+            this.activeAudioCondition,
+            this.activeUserAccessCondition(userId),
           ),
         );
 
@@ -135,7 +161,7 @@ export abstract class AudioRepository {
     const result = await db
       .select()
       .from(audioFiles)
-      .where(eq(audioFiles.id, id));
+      .where(and(eq(audioFiles.id, id), this.activeAudioCondition));
     return result[0] ?? null;
   }
 
@@ -143,7 +169,7 @@ export abstract class AudioRepository {
     const result = await db
       .select()
       .from(audioFiles)
-      .where(eq(audioFiles.filename, filename));
+      .where(and(eq(audioFiles.filename, filename), this.activeAudioCondition));
     return result[0] ?? null;
   }
 
@@ -151,7 +177,7 @@ export abstract class AudioRepository {
     const result = await db
       .select()
       .from(audioFiles)
-      .where(eq(audioFiles.tidalId, tidalId));
+      .where(and(eq(audioFiles.tidalId, tidalId), this.activeAudioCondition));
     return result[0] ?? null;
   }
 
@@ -159,7 +185,7 @@ export abstract class AudioRepository {
     const result = await db
       .select()
       .from(audioFiles)
-      .where(eq(audioFiles.youtubeId, videoId));
+      .where(and(eq(audioFiles.youtubeId, videoId), this.activeAudioCondition));
     return result[0] ?? null;
   }
 
@@ -170,7 +196,7 @@ export abstract class AudioRepository {
     const result = await db
       .select()
       .from(audioFiles)
-      .where(eq(audioFiles.isrc, normalized));
+      .where(and(eq(audioFiles.isrc, normalized), this.activeAudioCondition));
     return result[0] ?? null;
   }
 
@@ -186,10 +212,11 @@ export abstract class AudioRepository {
     return result[0] ?? null;
   }
 
-  static async delete(id: string): Promise<boolean> {
+  static async softDelete(id: string, deletedAt: Date): Promise<boolean> {
     const result = await db
-      .delete(audioFiles)
-      .where(eq(audioFiles.id, id))
+      .update(audioFiles)
+      .set({ deletedAt })
+      .where(and(eq(audioFiles.id, id), this.activeAudioCondition))
       .returning();
     return result.length > 0;
   }
@@ -247,8 +274,9 @@ export abstract class AudioRepository {
         .leftJoin(audioFileUsers, eq(audioFiles.id, audioFileUsers.audioFileId))
         .where(
           and(
+            this.activeAudioCondition,
             searchCondition,
-            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
+            this.activeUserAccessCondition(userId),
           ),
         )
         .groupBy(audioFiles.id)
@@ -262,8 +290,9 @@ export abstract class AudioRepository {
         .leftJoin(audioFileUsers, eq(audioFiles.id, audioFileUsers.audioFileId))
         .where(
           and(
+            this.activeAudioCondition,
             searchCondition,
-            or(eq(audioFileUsers.userId, userId), eq(audioFiles.isPublic, 1)),
+            this.activeUserAccessCondition(userId),
           ),
         )
         .groupBy(audioFiles.id);
@@ -277,7 +306,7 @@ export abstract class AudioRepository {
     const files = await db
       .select()
       .from(audioFiles)
-      .where(searchCondition)
+      .where(and(this.activeAudioCondition, searchCondition))
       .orderBy(desc(relevanceScore))
       .limit(limit)
       .offset(offset);
@@ -285,7 +314,7 @@ export abstract class AudioRepository {
     const countResult = await db
       .select({ count: count() })
       .from(audioFiles)
-      .where(searchCondition);
+      .where(and(this.activeAudioCondition, searchCondition));
 
     const total = countResult[0]?.count ?? 0;
 
@@ -313,7 +342,7 @@ export abstract class AudioRepository {
         `.as("score"),
       })
       .from(audioFiles)
-      .where(ilike(audioFiles.title, searchPattern));
+      .where(and(this.activeAudioCondition, ilike(audioFiles.title, searchPattern)));
 
     const artistQuery = db
       .selectDistinct({
@@ -328,7 +357,9 @@ export abstract class AudioRepository {
         `.as("score"),
       })
       .from(audioFiles)
-      .where(ilike(audioFiles.artist, searchPattern));
+      .where(
+        and(this.activeAudioCondition, ilike(audioFiles.artist, searchPattern)),
+      );
 
     const albumQuery = db
       .selectDistinct({
@@ -343,7 +374,7 @@ export abstract class AudioRepository {
         `.as("score"),
       })
       .from(audioFiles)
-      .where(ilike(audioFiles.album, searchPattern));
+      .where(and(this.activeAudioCondition, ilike(audioFiles.album, searchPattern)));
 
     const results = await titleQuery
       .unionAll(artistQuery)
@@ -367,6 +398,35 @@ export abstract class AudioRepository {
     }
 
     return suggestions;
+  }
+
+  static async findDeletedIdsSince(
+    userId: string,
+    since: Date,
+  ): Promise<string[]> {
+    const [deletedFiles, deletedUserLinks] = await Promise.all([
+      db
+        .selectDistinct({ id: audioFiles.id })
+        .from(audioFiles)
+        .leftJoin(audioFileUsers, eq(audioFiles.id, audioFileUsers.audioFileId))
+        .where(
+          and(
+            gt(audioFiles.deletedAt, since),
+            or(eq(audioFiles.isPublic, 1), eq(audioFileUsers.userId, userId)),
+          ),
+        ),
+      db
+        .selectDistinct({ id: audioFileUsers.audioFileId })
+        .from(audioFileUsers)
+        .where(
+          and(
+            eq(audioFileUsers.userId, userId),
+            gt(audioFileUsers.deletedAt, since),
+          ),
+        ),
+    ]);
+
+    return [...new Set([...deletedFiles, ...deletedUserLinks].map((row) => row.id))];
   }
 
   static toAudioModel(dbFile: AudioFile): AudioModel.audioFile {

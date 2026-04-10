@@ -31,6 +31,7 @@ export const audioFiles = pgTable(
     format: text("format"),
     extra: text("extra"),
     isPublic: integer("is_public").default(0),
+    deletedAt: timestamp("deleted_at"),
   },
   (table) => ({
     titleIdx: index("title_idx").on(table.title),
@@ -73,6 +74,7 @@ export const audioFileUsers = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    deletedAt: timestamp("deleted_at"),
   },
   (table) => [
     primaryKey({ columns: [table.id] }),
@@ -93,6 +95,7 @@ export const playlists = pgTable(
     coverImage: text("cover_image"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
   },
   (table) => ({
     userIdIdx: index("playlist_user_id_idx").on(table.userId),
@@ -115,6 +118,7 @@ export const playlistItems = pgTable(
       .references(() => audioFiles.id, { onDelete: "cascade" }),
     position: integer("position").notNull(),
     addedAt: timestamp("added_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
   },
   (table) => [
     primaryKey({ columns: [table.id] }),

@@ -154,6 +154,7 @@ export namespace AudioModel {
 
   export const audioListResponse = t.Object({
     files: t.Array(audioFile),
+    deletedIds: t.Array(t.String()),
     count: t.Number(),
     page: t.Number(),
     limit: t.Number(),

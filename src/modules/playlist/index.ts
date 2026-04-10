@@ -17,6 +17,7 @@ export const playlistController = new Elysia({
     "playlist.itemParams": PlaylistModel.itemParams,
     "playlist.reorder": PlaylistModel.reorderBody,
     "playlist.list": PlaylistModel.listQuery,
+    "playlist.detailQuery": PlaylistModel.detailQuery,
   })
 
   .post(
@@ -45,7 +46,8 @@ export const playlistController = new Elysia({
       return await PlaylistService.getUserPlaylists(
         auth.userId,
         query.type,
-        query.limit
+        query.limit,
+        query.lastFetchedAt
       );
     },
     {
@@ -63,11 +65,16 @@ export const playlistController = new Elysia({
 
   .get(
     "/:id",
-    async ({ params: { id }, auth }) => {
-      return await PlaylistService.getPlaylistById(id, auth.userId);
+    async ({ params: { id }, query, auth }) => {
+      return await PlaylistService.getPlaylistById(
+        id,
+        auth.userId,
+        query.lastFetchedAt
+      );
     },
     {
       isAuth: true,
+      query: "playlist.detailQuery",
       response: {
         200: PlaylistModel.detailResponse,
         403: PlaylistModel.errorResponse,

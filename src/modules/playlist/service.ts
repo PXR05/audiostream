@@ -37,10 +37,20 @@ export abstract class PlaylistService {
   ): Promise<string> {
     const playlistId = `youtube_${youtubePlaylistId}`;
 
-    const existing = await PlaylistRepository.findById(playlistId);
+    const existing = await PlaylistRepository.findById(playlistId, {
+      includeDeleted: true,
+    });
     if (existing) {
       if (existing.userId !== userId) {
         throw status(403, "You don't have access to this playlist");
+      }
+      if (existing.deletedAt) {
+        const restored = await PlaylistRepository.restore(playlistId, {
+          name: playlistTitle,
+          userId,
+          coverImage: existing.coverImage,
+        });
+        return restored?.id ?? playlistId;
       }
       return existing.id;
     }
@@ -132,19 +142,28 @@ export abstract class PlaylistService {
     userId: string,
     type?: "artist" | "album" | "user" | "auto" | "youtube" | "tidal",
     limit?: number,
+    lastFetchedAt?: number,
   ): Promise<PlaylistModel.listResponse> {
     const playlists = await PlaylistRepository.findByUserId(
       userId,
       type,
       limit,
     );
+    const deletedIds =
+      lastFetchedAt !== undefined
+        ? await PlaylistRepository.getDeletedIdsByUserSince(
+            userId,
+            new Date(lastFetchedAt),
+          )
+        : [];
 
-    return { playlists };
+    return { playlists, deletedIds };
   }
 
   static async getPlaylistById(
     playlistId: string,
     userId: string,
+    lastFetchedAt?: number,
   ): Promise<PlaylistModel.detailResponse> {
     const playlist = await PlaylistRepository.findById(playlistId);
 
@@ -164,6 +183,13 @@ export abstract class PlaylistService {
       addedAt: data.item.addedAt,
       audio: AudioRepository.toAudioModel(data.audio),
     }));
+    const deletedItemIds =
+      lastFetchedAt !== undefined
+        ? await PlaylistRepository.getDeletedItemIdsSince(
+            playlistId,
+            new Date(lastFetchedAt),
+          )
+        : [];
 
     return {
       playlist: {
@@ -175,6 +201,7 @@ export abstract class PlaylistService {
         updatedAt: playlist.updatedAt,
         items,
       },
+      deletedItemIds,
     };
   }
 
@@ -273,14 +300,9 @@ export abstract class PlaylistService {
       throw status(403, "You don't have access to this playlist");
     }
 
-    if (playlist.coverImage) {
-      try {
-        await Storage.delete(playlist.coverImage);
-      } catch {
-      }
-    }
-
-    await PlaylistRepository.delete(playlistId);
+    const deletedAt = new Date();
+    await PlaylistRepository.softDeleteItemsByPlaylist(playlistId, deletedAt);
+    await PlaylistRepository.softDelete(playlistId, deletedAt);
 
     logger.info(`Playlist deleted: ${playlistId}`, { context: "PLAYLIST" });
 
@@ -302,7 +324,7 @@ export abstract class PlaylistService {
       throw status(403, "You don't have access to this playlist");
     }
 
-    const audio = await AudioRepository.findById(audioId);
+    const audio = await AudioRepository.findById(audioId, userId);
     if (!audio) {
       throw status(404, "Audio file not found");
     }
@@ -354,7 +376,11 @@ export abstract class PlaylistService {
       throw status(403, "You don't have access to this playlist");
     }
 
-    const removed = await PlaylistRepository.removeItem(itemId);
+    const removed = await PlaylistRepository.softDeleteItem(
+      playlistId,
+      itemId,
+      new Date(),
+    );
 
     if (!removed) {
       throw status(404, "Item not found in playlist");

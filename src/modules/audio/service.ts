@@ -7,6 +7,7 @@ import type { AudioModel } from "./model";
 import {
   AudioRepository,
   AudioFileUserRepository,
+  PlaylistRepository,
 } from "../../db/repositories";
 import {
   generateId,
@@ -199,6 +200,13 @@ export abstract class AudioService {
       album,
       genre,
     } = options;
+    const deletedIds =
+      lastFetchedAt !== undefined
+        ? await AudioRepository.findDeletedIdsSince(
+            userId,
+            new Date(lastFetchedAt),
+          )
+        : [];
     const { files: dbFiles, total } = await AudioRepository.findAll({
       page,
       limit,
@@ -214,6 +222,7 @@ export abstract class AudioService {
     const totalPages = Math.ceil(total / limit);
     return {
       files,
+      deletedIds,
       count: total,
       page,
       limit,
@@ -337,23 +346,26 @@ export abstract class AudioService {
     id: string,
     userId: string,
   ): Promise<AudioModel.deleteResponse> {
+    const userLink = await AudioFileUserRepository.findByAudioAndUser(id, userId);
+    if (!userLink) {
+      throw status(403, "You don't have access to delete this file");
+    }
+
     const userAudioMap = await AudioFileUserRepository.findByAudioFileId(id);
+    const deletedAt = new Date();
+
     if (userAudioMap.length > 1) {
-      await AudioFileUserRepository.deleteByAudioAndUser(id, userId);
+      await AudioFileUserRepository.softDeleteByAudioAndUser(id, userId, deletedAt);
+      await PlaylistRepository.softDeleteItemsByAudioForUser(id, userId, deletedAt);
       return { success: true, message: "File removed from your library" };
     }
-    const file = await this.getAudioById(id, userId);
-    try {
-      await Storage.delete(file.filename);
-      if (file.imageFile) {
-        if (await Storage.exists(file.imageFile))
-          await Storage.delete(file.imageFile);
-      }
-      await AudioRepository.delete(id);
-      return { success: true, message: "File deleted successfully" };
-    } catch {
-      throw status(500, "Failed to delete file");
-    }
+
+    await this.getAudioById(id, userId);
+    await AudioRepository.softDelete(id, deletedAt);
+    await AudioFileUserRepository.softDeleteByAudioFileId(id, deletedAt);
+    await PlaylistRepository.softDeleteItemsByAudio(id, deletedAt);
+
+    return { success: true, message: "File deleted successfully" };
   }
 
   static async getAudioStreamInfo(
@@ -410,6 +422,7 @@ export abstract class AudioService {
     const totalPages = Math.ceil(total / limit);
     return {
       files,
+      deletedIds: [],
       count: total,
       page,
       limit,
@@ -507,6 +520,7 @@ export abstract class AudioService {
     const totalPages = Math.ceil(total / limit);
     return {
       files,
+      deletedIds: [],
       count: total,
       page,
       limit,

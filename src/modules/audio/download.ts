@@ -146,6 +146,7 @@ export abstract class DownloadService {
     const existing = await AudioFileUserRepository.findByAudioAndUser(
       audioFileId,
       userId,
+      { includeDeleted: true },
     );
     if (!existing) {
       await AudioFileUserRepository.create({
@@ -153,6 +154,8 @@ export abstract class DownloadService {
         audioFileId,
         userId,
       });
+    } else if (existing.deletedAt) {
+      await AudioFileUserRepository.restoreByAudioAndUser(audioFileId, userId);
     }
     if (playlistId) {
       const existingItem = await PlaylistRepository.findItemByAudioAndPlaylist(
@@ -179,7 +182,7 @@ export abstract class DownloadService {
         );
       }
     }
-    return { alreadyMapped: !!existing };
+    return { alreadyMapped: !!existing && !existing.deletedAt };
   }
 
   private static async findOrCreateTidalCollectionPlaylist(options: {
@@ -191,8 +194,18 @@ export abstract class DownloadService {
     const { type, sourceId, title, userId } = options;
     const playlistId = `tidal_${type}_${sourceId}_${userId}`;
 
-    const existing = await PlaylistRepository.findById(playlistId);
+    const existing = await PlaylistRepository.findById(playlistId, {
+      includeDeleted: true,
+    });
     if (existing) {
+      if (existing.deletedAt) {
+        const restored = await PlaylistRepository.restore(playlistId, {
+          name: title,
+          userId,
+          coverImage: existing.coverImage,
+        });
+        return restored?.id ?? playlistId;
+      }
       return existing.id;
     }
 
