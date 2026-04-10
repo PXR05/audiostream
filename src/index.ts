@@ -57,9 +57,7 @@ if (cluster.isPrimary) {
   }
 
   await AuthService.seedAdminUser();
-
-  await backfillBitDepth();
-
+  
   if (process.env.NODE_ENV === "production") {
     for (let i = 0; i < os.availableParallelism(); i++) cluster.fork();
   } else {
