@@ -1358,7 +1358,7 @@ export abstract class DownloadService {
 
     const collection = await getTidalCollectionInfo(
       resource.type,
-      resource.id,
+      resource.id.split("_")[0],
       signal,
     );
 
