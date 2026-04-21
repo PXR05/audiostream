@@ -1,18 +1,8 @@
 import { existsSync, unlinkSync } from "fs";
 import { normalizeIsrc } from "./isrc";
+import { getTidalProxyApis, TIDAL_PROXY_APIS } from "./tidalProxies";
 
-export const TIDAL_PROXY_APIS = [
-  "https://tidal-api.binimum.org",
-  "https://tidal.kinoplus.online",
-  "https://triton.squid.wtf",
-  "https://voge.qqdl.site",
-  "https://maus.qqdl.site",
-  "https://hund.qqdl.site",
-  "https://katze.qqdl.site",
-  "https://wolf.qqdl.site",
-  "https://hifi-one.spotisaver.net",
-  "https://hifi-two.spotisaver.net",
-];
+export { TIDAL_PROXY_APIS };
 
 const TIDAL_MAX_RETRIES = 2;
 const TIDAL_RETRY_DELAY_MS = 500;
@@ -207,7 +197,8 @@ export async function getTidalTrackIsrc(
   trackId: number,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const attempts = TIDAL_PROXY_APIS.map(async (api) => {
+  const proxyApis = await getTidalProxyApis(signal);
+  const attempts = proxyApis.map(async (api) => {
     const isrc = await fetchTrackIsrcFromProxy(api, trackId, signal);
     if (!isrc) {
       throw new Error("ISRC not found");
@@ -391,10 +382,9 @@ export async function getDownloadUrl(
   quality: string,
   signal?: AbortSignal,
 ): Promise<TidalDownloadInfo> {
+  const proxyApis = await getTidalProxyApis(signal);
   const settled = await Promise.allSettled(
-    TIDAL_PROXY_APIS.map((api) =>
-      fetchFromProxy(api, trackId, quality, signal),
-    ),
+    proxyApis.map((api) => fetchFromProxy(api, trackId, quality, signal)),
   );
 
   const candidates: TidalDownloadInfo[] = settled
@@ -905,8 +895,9 @@ export async function searchTidalTracks(
   if (!trimmedQuery) return [];
 
   const clampedLimit = clampSearchLimit(limit);
+  const proxyApis = await getTidalProxyApis();
   const settled = await Promise.allSettled(
-    TIDAL_PROXY_APIS.map((api) =>
+    proxyApis.map((api) =>
       fetchSearchFromProxy(api, trimmedQuery, clampedLimit),
     ),
   );
@@ -1074,10 +1065,9 @@ export async function getTidalCollectionInfo(
   id: string,
   signal?: AbortSignal,
 ): Promise<TidalCollectionInfo> {
+  const proxyApis = await getTidalProxyApis(signal);
   const first = await Promise.any(
-    TIDAL_PROXY_APIS.map((api) =>
-      fetchCollectionFromProxy(api, type, id, signal),
-    ),
+    proxyApis.map((api) => fetchCollectionFromProxy(api, type, id, signal)),
   );
 
   const seen = new Set<number>();
@@ -1171,7 +1161,8 @@ export interface TidalTrackInfo {
 export async function getTidalTrackInfo(
   trackId: number,
 ): Promise<TidalTrackInfo | null> {
-  const attempts = TIDAL_PROXY_APIS.map((api) =>
+  const proxyApis = await getTidalProxyApis();
+  const attempts = proxyApis.map((api) =>
     fetchTrackInfoFromProxy(api, trackId),
   );
 

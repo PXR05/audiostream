@@ -8,7 +8,6 @@ import { logger } from "./utils/logger";
 import { Storage } from "./utils/storage";
 import { AuthService } from "./modules/auth/service";
 import migrate from "./scripts/migrate";
-import backfillBitDepth from "./scripts/backfillBitDepth";
 
 async function setupDirectories() {
   try {
