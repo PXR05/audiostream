@@ -505,6 +505,12 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         auth.userId,
       );
 
+      const filename = file.metadata?.title
+        ? `${file.metadata.artist || "Unknown"} - ${
+            file.metadata.title
+          }.${file.filename.split(".").pop()}`
+        : file.filename;
+      const encodedFilename = encodeURIComponent(filename);
       const range = request.headers.get("range");
 
       if (range) {
@@ -524,7 +530,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         set.headers["content-type"] = contentType;
         set.headers["accept-ranges"] = "bytes";
         set.headers["content-disposition"] =
-          `inline; filename="${file.filename}"`;
+          `inline; filename="${file.filename}"; filename*=UTF-8''${encodedFilename}`;
 
         return new Response(stream as unknown as ReadableStream);
       }
@@ -535,7 +541,7 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
       set.headers["content-length"] = size.toString();
       set.headers["accept-ranges"] = "bytes";
       set.headers["content-disposition"] =
-        `inline; filename="${file.filename}"`;
+        `inline; filename="${file.filename}"; filename*=UTF-8''${encodedFilename}`;
 
       return new Response(stream as unknown as ReadableStream);
     },
@@ -555,10 +561,15 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
         auth.userId,
       );
 
+      const filename = file.metadata?.title
+        ? `${file.metadata.artist || "Unknown"} - ${file.metadata.title}.${file.imageFile?.split(".").pop() || "jpg"}`
+        : file.imageFile || "cover.jpg";
+      const encodedFilename = encodeURIComponent(filename);
+
       set.headers["cache-control"] = "public, max-age=31536000, immutable";
       set.headers["content-type"] = contentType;
       set.headers["content-disposition"] =
-        `inline; filename="${file.imageFile}"`;
+        `inline; filename="${file.imageFile}"; filename*=UTF-8''${encodedFilename}`;
 
       return new Response(new Uint8Array(data));
     },

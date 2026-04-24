@@ -23,8 +23,8 @@ FROM oven/bun:slim AS production
 
 WORKDIR /usr/src/app
 
-COPY --from=mwader/static-ffmpeg:8.0 /ffmpeg /usr/local/bin/
-COPY --from=mwader/static-ffmpeg:8.0 /ffprobe /usr/local/bin/
+COPY --from=mwader/static-ffmpeg:latest /ffmpeg /usr/local/bin/
+COPY --from=mwader/static-ffmpeg:latest /ffprobe /usr/local/bin/
 
 RUN apt-get update 
 RUN apt-get install -y python3 --no-install-recommends
