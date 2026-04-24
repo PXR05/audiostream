@@ -58,13 +58,23 @@ if (cluster.isPrimary) {
   }
 
   await AuthService.seedAdminUser();
-  
+
   if (process.env.BACKFILL_OPUS_METADATA === "true") {
-    await opusBackfill();
+    try {
+      await opusBackfill();
+    } catch (error) {
+      logger.error("Opus metadata backfill failed", error, {
+        context: "BACKFILL",
+      });
+    }
   }
 
   if (process.env.BACKFILL_ISRC === "true") {
-    await isrcBackfill();
+    try {
+      await isrcBackfill();
+    } catch (error) {
+      logger.error("ISRC backfill failed", error, { context: "BACKFILL" });
+    }
   }
 
   if (process.env.NODE_ENV === "production") {
