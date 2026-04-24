@@ -53,10 +53,14 @@ export abstract class AudioService {
     try {
       let metadata: mm.IAudioMetadata;
       try {
-        metadata = await mm.parseFile(filePath, { skipCovers: true });
+        metadata = await mm.parseFile(filePath, {
+          skipCovers: true,
+          duration: true,
+        });
       } catch {
         metadata = await mm.parseFile(filePath, {
           skipCovers: true,
+          duration: true,
           skipPostHeaders: true,
         });
       }
