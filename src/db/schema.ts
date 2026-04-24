@@ -34,13 +34,13 @@ export const audioFiles = pgTable(
     isPublic: integer("is_public").default(0),
     deletedAt: timestamp("deleted_at"),
   },
-  (table) => ({
-    titleIdx: index("title_idx").on(table.title),
-    artistIdx: index("artist_idx").on(table.artist),
-    albumIdx: index("album_idx").on(table.album),
-    isrcIdx: index("isrc_idx").on(table.isrc),
-    uploadedAtIdx: index("uploaded_at_idx").on(table.uploadedAt),
-  }),
+  (table) => [
+    index("title_idx").on(table.title),
+    index("artist_idx").on(table.artist),
+    index("album_idx").on(table.album),
+    index("isrc_idx").on(table.isrc),
+    index("uploaded_at_idx").on(table.uploadedAt),
+  ],
 );
 
 export type AudioFile = typeof audioFiles.$inferSelect;
@@ -56,14 +56,35 @@ export const users = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     lastLoginAt: timestamp("last_login_at"),
   },
-  (table) => ({
-    usernameIdx: index("user_username_idx").on(table.username),
-    createdAtIdx: index("user_created_at_idx").on(table.createdAt),
-  }),
+  (table) => [
+    index("user_username_idx").on(table.username),
+    index("user_created_at_idx").on(table.createdAt),
+  ],
 );
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+
+export const userSettings = pgTable(
+  "user_settings",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    settingKey: text("setting_key").notNull(),
+    settingValue: text("setting_value").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (table) => [
+    index("user_settings_user_id_idx").on(table.userId),
+    index("user_settings_key_idx").on(table.settingKey),
+  ],
+);
+
+export type UserSetting = typeof userSettings.$inferSelect;
+export type NewUserSetting = typeof userSettings.$inferInsert;
 
 export const audioFileUsers = pgTable(
   "audio_file_users",
@@ -98,10 +119,10 @@ export const playlists = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
   },
-  (table) => ({
-    userIdIdx: index("playlist_user_id_idx").on(table.userId),
-    createdAtIdx: index("playlist_created_at_idx").on(table.createdAt),
-  }),
+  (table) => [
+    index("playlist_user_id_idx").on(table.userId),
+    index("playlist_created_at_idx").on(table.createdAt),
+  ],
 );
 
 export type Playlist = typeof playlists.$inferSelect;
@@ -148,10 +169,10 @@ export const sessions = pgTable(
     userAgent: text("user_agent"),
     isRevoked: integer("is_revoked").default(0),
   },
-  (table) => ({
-    userIdIdx: index("session_user_id_idx").on(table.userId),
-    expiresAtIdx: index("session_expires_at_idx").on(table.expiresAt),
-  }),
+  (table) => [
+    index("session_user_id_idx").on(table.userId),
+    index("session_expires_at_idx").on(table.expiresAt),
+  ],
 );
 
 export type Session = typeof sessions.$inferSelect;

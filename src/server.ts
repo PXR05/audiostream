@@ -4,6 +4,7 @@ import { Elysia } from "elysia";
 import { audioController } from "./modules/audio";
 import { authController } from "./modules/auth";
 import { playlistController } from "./modules/playlist";
+import { userController } from "./modules/user";
 import { corsConfig } from "./utils/cors";
 import { logger } from "./utils/logger";
 
@@ -37,6 +38,7 @@ const app = new Elysia()
   .use(authController)
   .use(audioController)
   .use(playlistController)
+  .use(userController)
   .onError(({ request, code, error, set }) => {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
