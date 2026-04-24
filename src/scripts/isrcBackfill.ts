@@ -9,8 +9,6 @@ import { logger } from "../utils/logger";
 import { Storage } from "../utils/storage";
 
 const CONTEXT = "BACKFILL";
-const SNAPSHOT_PAGE_SIZE = 500;
-const MAX_TRACKS = 10;
 
 function parseTidalTrackId(value: string | null): number | null {
   if (!value) return null;
@@ -38,7 +36,7 @@ async function snapshotCandidateAudios(): Promise<AudioFile[]> {
   while (allFiles.length < total) {
     const { files, total: currentTotal } = await AudioRepository.findAll({
       page,
-      limit: SNAPSHOT_PAGE_SIZE,
+      limit: 20,
       sortBy: "uploadedAt",
       sortOrder: "asc",
     });
@@ -53,10 +51,6 @@ async function snapshotCandidateAudios(): Promise<AudioFile[]> {
   }
 
   const candidates = allFiles.filter(isMissingIsrc);
-
-  if (MAX_TRACKS > 0) {
-    return candidates.slice(0, MAX_TRACKS);
-  }
 
   return candidates;
 }

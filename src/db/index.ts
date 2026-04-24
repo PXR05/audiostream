@@ -39,7 +39,7 @@ export function getDb() {
 
     dbInstance = drizzle(pool);
 
-    pool.query("SELECT NOW()", (err, res) => {
+    pool.query("SELECT NOW()", (err, _) => {
       if (err) {
         logger.error("Database connection test failed", err);
       }

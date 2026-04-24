@@ -77,7 +77,7 @@ if (cluster.isPrimary) {
     }
   }
 
-  if (process.env.NODE_ENV === "production") {
+  if (process.env.NODE_ENV === "production" && process.env.MULTIWORKER === "true") {
     for (let i = 0; i < os.availableParallelism(); i++) cluster.fork();
   } else {
     await import("./server");
