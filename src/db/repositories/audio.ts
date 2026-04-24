@@ -84,7 +84,7 @@ export abstract class AudioRepository {
 
       if (options?.lastFetchedAt) {
         whereConditions.push(
-          gt(audioFiles.uploadedAt, new Date(options.lastFetchedAt)),
+          gt(audioFiles.updatedAt, new Date(options.lastFetchedAt)),
         );
       }
 
@@ -206,7 +206,7 @@ export abstract class AudioRepository {
   ): Promise<AudioFile | null> {
     const result = await db
       .update(audioFiles)
-      .set(data)
+      .set({ ...data, updatedAt: new Date() })
       .where(eq(audioFiles.id, id))
       .returning();
     return result[0] ?? null;
@@ -440,6 +440,7 @@ export abstract class AudioRepository {
       id: dbFile.id,
       filename: dbFile.filename,
       size: dbFile.size,
+      updatedAt: dbFile.updatedAt,
       uploadedAt: dbFile.uploadedAt,
       imageFile: dbFile.imageFile ?? undefined,
       youtubeId: dbFile.youtubeId ?? undefined,
@@ -481,6 +482,7 @@ export abstract class AudioRepository {
       isrc: normalizedIsrc ?? null,
       filename,
       size,
+      updatedAt: new Date(),
       uploadedAt: new Date(),
       imageFile: imageFile ?? null,
       title: metadata?.title ?? null,

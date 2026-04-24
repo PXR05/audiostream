@@ -17,7 +17,6 @@ export const audioFiles = pgTable(
     isrc: text("isrc"),
     filename: text("filename").notNull().unique(),
     size: integer("size").notNull(),
-    uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
     imageFile: text("image_file"),
     title: text("title"),
     artist: text("artist"),
@@ -32,6 +31,8 @@ export const audioFiles = pgTable(
     format: text("format"),
     extra: text("extra"),
     isPublic: integer("is_public").default(0),
+    uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [

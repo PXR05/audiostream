@@ -82,6 +82,7 @@ export namespace AudioModel {
     id: t.String(),
     filename: t.String(),
     size: t.Number(),
+    updatedAt: t.Date(),
     uploadedAt: t.Date(),
     metadata: t.Optional(audioMetadata),
     imageFile: t.Optional(t.String()),

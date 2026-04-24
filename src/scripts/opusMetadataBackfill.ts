@@ -1,14 +1,14 @@
 import { mkdir } from "fs/promises";
 import { existsSync, unlinkSync } from "fs";
 import { join } from "path";
+import type { AudioFile } from "../db/schema";
 import { AudioRepository } from "../db/repositories";
-import { closeDb } from "../db";
 import { AudioService } from "../modules/audio/service";
 import { TEMP_DIR } from "../utils/helpers";
 import { logger } from "../utils/logger";
 import { Storage } from "../utils/storage";
 
-const PAGE_SIZE = Number.parseInt(process.env.BACKFILL_PAGE_SIZE || "100", 10);
+const CONTEXT = "BACKFILL";
 
 function toPatch(
   metadata: Awaited<ReturnType<typeof AudioService.extractMetadata>>,
@@ -29,88 +29,107 @@ function toPatch(
   };
 }
 
+function needsMetadataBackfill(file: AudioFile): boolean {
+  return (
+    file.duration === null ||
+    file.duration === undefined ||
+    file.bitrate === null ||
+    file.bitrate === undefined
+  );
+}
+
+async function snapshotCandidateFiles(): Promise<AudioFile[]> {
+  const allFiles: AudioFile[] = [];
+  let page = 1;
+  let total = Number.POSITIVE_INFINITY;
+
+  while (allFiles.length < total) {
+    const { files, total: currentTotal } = await AudioRepository.findAll({
+      page,
+      limit: 20,
+      sortBy: "uploadedAt",
+      sortOrder: "asc",
+    });
+
+    total = currentTotal;
+    if (files.length === 0) {
+      break;
+    }
+
+    allFiles.push(...files);
+    page++;
+  }
+
+  return allFiles.filter(needsMetadataBackfill);
+}
+
 async function main() {
   await mkdir(TEMP_DIR, { recursive: true });
   await Storage.init();
 
-  let page = 1;
-  let processed = 0;
-  let updated = 0;
-  let skipped = 0;
-  let failed = 0;
+  const stats = {
+    total: 0,
+    processed: 0,
+    updated: 0,
+    failed: 0,
+  };
 
   try {
-    while (true) {
-      const { files } = await AudioRepository.findAll({
-        page,
-        limit: PAGE_SIZE,
-        sortBy: "uploadedAt",
-        sortOrder: "asc",
-      });
+    const candidates = await snapshotCandidateFiles();
+    stats.total = candidates.length;
 
-      if (files.length === 0) break;
+    logger.info(
+      `OPUS backfill starting. total=${stats.total}`,
+      { context: CONTEXT },
+    );
 
-      for (const file of files) {
-        processed++;
+    for (const file of candidates) {
+      stats.processed++;
 
-        if (
-          file.duration !== null &&
-          file.duration !== undefined &&
-          file.bitrate !== null &&
-          file.bitrate !== undefined
-        ) {
-          skipped++;
+      const tempPath = join(TEMP_DIR, `meta_${file.id}_${file.filename}`);
+
+      try {
+        const data = await Storage.download(file.filename);
+        await Bun.write(tempPath, data);
+
+        const extracted = await AudioService.extractMetadata(tempPath);
+        const patch = toPatch(extracted);
+
+        if (!patch) {
+          stats.failed++;
+          logger.warn(`No metadata extracted for ${file.id}`, {
+            context: CONTEXT,
+          });
           continue;
         }
 
-        const tempPath = join(TEMP_DIR, `meta_${file.id}_${file.filename}`);
-
-        try {
-          const data = await Storage.download(file.filename);
-          await Bun.write(tempPath, data);
-
-          const extracted = await AudioService.extractMetadata(tempPath);
-          const patch = toPatch(extracted);
-
-          if (!patch) {
-            failed++;
-            logger.warn(`No metadata extracted for ${file.id}`, {
-              context: "BACKFILL",
-            });
-            continue;
-          }
-
-          await AudioRepository.update(file.id, patch);
-          updated++;
-        } catch (error) {
-          failed++;
-          logger.error(`Metadata backfill failed for ${file.id}`, error, {
-            context: "BACKFILL",
-          });
-        } finally {
-          if (existsSync(tempPath)) {
-            try {
-              unlinkSync(tempPath);
-            } catch {}
-          }
+        await AudioRepository.update(file.id, patch);
+        stats.updated++;
+      } catch (error) {
+        stats.failed++;
+        logger.error(`Metadata backfill failed for ${file.id}`, error, {
+          context: CONTEXT,
+        });
+      } finally {
+        if (existsSync(tempPath)) {
+          try {
+            unlinkSync(tempPath);
+          } catch {}
         }
       }
-
-      page++;
     }
 
     logger.info(
-      `Metadata backfill done. processed=${processed}, updated=${updated}, skipped=${skipped}, failed=${failed}`,
-      { context: "BACKFILL" },
+      `Metadata backfill done. total=${stats.total}, processed=${stats.processed}, updated=${stats.updated}, failed=${stats.failed}`,
+      { context: CONTEXT },
     );
-  } finally {
-    await closeDb();
+  } catch (error) {
+    logger.error("Metadata backfill failed", error, { context: CONTEXT });
   }
 }
 
 main().catch(async (error) => {
-  logger.error("Metadata backfill crashed", error, { context: "BACKFILL" });
-  await closeDb();
+  logger.error("Metadata backfill crashed", error, { context: CONTEXT });
   process.exit(1);
 });
 
