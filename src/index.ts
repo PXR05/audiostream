@@ -8,8 +8,6 @@ import { logger } from "./utils/logger";
 import { Storage } from "./utils/storage";
 import { AuthService } from "./modules/auth/service";
 import migrate from "./scripts/migrate";
-import opusBackfill from "./scripts/opusMetadataBackfill";
-import isrcBackfill from "./scripts/isrcBackfill";
 
 async function setupDirectories() {
   try {
@@ -58,24 +56,6 @@ if (cluster.isPrimary) {
   }
 
   await AuthService.seedAdminUser();
-
-  if (process.env.BACKFILL_OPUS_METADATA === "true") {
-    try {
-      await opusBackfill();
-    } catch (error) {
-      logger.error("Opus metadata backfill failed", error, {
-        context: "BACKFILL",
-      });
-    }
-  }
-
-  if (process.env.BACKFILL_ISRC === "true") {
-    try {
-      await isrcBackfill();
-    } catch (error) {
-      logger.error("ISRC backfill failed", error, { context: "BACKFILL" });
-    }
-  }
 
   if (process.env.NODE_ENV === "production" && process.env.MULTIWORKER === "true") {
     for (let i = 0; i < os.availableParallelism(); i++) cluster.fork();

@@ -2,11 +2,11 @@ import { t } from "elysia";
 
 export namespace UserModel {
   export const settingParams = t.Object({
-    key: t.String({ minLength: 1, maxLength: 100 }),
+    key: t.String({ minLength: 1 }),
   });
 
   export const upsertSettingBody = t.Object({
-    value: t.String({ minLength: 1, maxLength: 5000 }),
+    value: t.String({ minLength: 1 }),
   });
 
   export const settingItem = t.Object({
