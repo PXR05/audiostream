@@ -1,21 +1,15 @@
-const TIDAL_PROXY_LIST_URL =
-  process.env.TIDAL_PROXY_LIST_URL ||
-  "https://gist.githubusercontent.com/afkarxyz/2ce772b943321b9448b454f39403ce25/raw";
+const TIDAL_PROXY_LIST_URL = process.env.TIDAL_PROXY_LIST_URL;
 const TIDAL_PROXY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const TIDAL_PROXY_LIST_TIMEOUT_MS = 10_000;
 
 const TIDAL_FALLBACK_PROXY_APIS = [
-  "https://tidal-api.binimum.org",
   "https://maus.qqdl.site",
   "https://hund.qqdl.site",
   "https://katze.qqdl.site",
   "https://wolf.qqdl.site",
-  "https://hifi-two.spotisaver.net",
   "https://eu-central.monochrome.tf",
-  "https://hifi.geeked.wtf",
   "https://monochrome-api.samidy.com",
   "https://us-west.monochrome.tf",
-  "https://api.monochrome.tf",
 ];
 
 export const TIDAL_PROXY_APIS = TIDAL_FALLBACK_PROXY_APIS;
@@ -47,6 +41,9 @@ function parseTidalProxyList(value: unknown): string[] {
 }
 
 async function fetchTidalProxyApis(signal?: AbortSignal): Promise<string[]> {
+  if (!TIDAL_PROXY_LIST_URL) {
+    throw new Error("TIDAL_PROXY_LIST_URL environment variable is not set");
+  }
   const resp = await fetch(TIDAL_PROXY_LIST_URL, {
     signal: signal ?? AbortSignal.timeout(TIDAL_PROXY_LIST_TIMEOUT_MS),
   });
@@ -77,6 +74,9 @@ export async function getTidalProxyApis(
   }
 
   tidalProxyApiFetchPromise = (async () => {
+    if (!TIDAL_PROXY_LIST_URL) {
+      return TIDAL_FALLBACK_PROXY_APIS;
+    }
     try {
       const proxies = await fetchTidalProxyApis(signal);
       tidalProxyApiCache = proxies;
