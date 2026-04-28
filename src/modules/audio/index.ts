@@ -217,6 +217,9 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
               if (info) {
                 info.listeners.forEach((listener) => listener(data));
               }
+              logger.debug(
+                `Broadcasting event for stream ${query.stream}: ${data.type} - ${data.message}`,
+              );
             }
 
             downloadInfo.promise = DownloadService.downloadYoutube(
@@ -363,6 +366,9 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
               if (info) {
                 info.listeners.forEach((listener) => listener(data));
               }
+              logger.debug(
+                `Broadcasting event for stream ${query.stream}: ${data.type} - ${data.message}`,
+              );
             }
 
             downloadInfo.promise = DownloadService.downloadTidal(
