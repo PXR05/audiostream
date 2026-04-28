@@ -1,25 +1,26 @@
 import { status } from "elysia";
 import { existsSync, unlinkSync } from "fs";
-import { join, extname } from "path";
-import * as mm from "music-metadata";
 import jimp from "jimp";
-import type { AudioModel } from "./model";
+import * as mm from "music-metadata";
+import { extname, join } from "path";
 import {
-  AudioRepository,
   AudioFileUserRepository,
+  AudioRepository,
   PlaylistRepository,
 } from "../../db/repositories";
 import {
-  generateId,
-  TEMP_DIR,
   ALLOWED_AUDIO_EXTENSIONS,
-  MAX_FILE_SIZE,
+  generateId,
   getWebPImageFileName,
+  MAX_FILE_SIZE,
+  TEMP_DIR,
 } from "../../utils/helpers";
+import { normalizeIsrc } from "../../utils/isrc";
 import { logger } from "../../utils/logger";
 import { Storage } from "../../utils/storage";
 import { searchTidalTracks } from "../../utils/tidal";
-import { normalizeIsrc } from "../../utils/isrc";
+import type { AudioModel } from "./model";
+import YTMusic from "ytmusic-api";
 
 function createSeededRandom(seed: string) {
   let hash = 0;
@@ -461,36 +462,47 @@ export abstract class AudioService {
     query: string,
   ): Promise<AudioModel.youtubeSearchResponse> {
     const apiKey = process.env.YOUTUBE_API_KEY;
-    if (!apiKey) throw new Error("YOUTUBE_API_KEY is not configured");
-    const params = new URLSearchParams({
-      part: "snippet",
-      q: query,
-      type: "video",
-      videoCategoryId: "10",
-      maxResults: "10",
-      key: apiKey,
-    });
-    const response = await fetch(
-      `https://www.googleapis.com/youtube/v3/search?${params}`,
-    );
-    if (!response.ok)
-      throw new Error(`YouTube API error: ${await response.text()}`);
-    const data = await response.json();
-    return data.items.map(
-      (item: {
-        id: { videoId: string };
-        snippet: {
-          title: string;
-          channelTitle: string;
-          thumbnails: { medium: { url: string } };
-        };
-      }) => ({
-        videoId: item.id.videoId,
-        title: item.snippet.title,
-        artist: item.snippet.channelTitle,
-        thumbnail: item.snippet.thumbnails.medium.url,
-      }),
-    );
+    if (apiKey) {
+      const params = new URLSearchParams({
+        part: "snippet",
+        q: query,
+        type: "video",
+        videoCategoryId: "10",
+        maxResults: "10",
+        key: apiKey,
+      });
+      const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/search?${params}`,
+      );
+      if (!response.ok)
+        throw new Error(`YouTube API error: ${await response.text()}`);
+      const data = await response.json();
+      return data.items.map(
+        (item: {
+          id: { videoId: string };
+          snippet: {
+            title: string;
+            channelTitle: string;
+            thumbnails: { medium: { url: string } };
+          };
+        }) => ({
+          videoId: item.id.videoId,
+          title: item.snippet.title,
+          artist: item.snippet.channelTitle,
+          thumbnail: item.snippet.thumbnails.medium.url,
+        }),
+      );
+    } else {
+      const ytmusic = new YTMusic();
+      await ytmusic.initialize();
+      const searchResults = await ytmusic.searchSongs(query);
+      return searchResults.map((result: any) => ({
+        videoId: result.videoId,
+        title: result.title,
+        artist: result.artists?.[0]?.name || "Unknown Artist",
+        thumbnail: result.thumbnails?.[0]?.url || "",
+      }));
+    }
   }
 
   static async searchTidal(
