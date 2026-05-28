@@ -18,9 +18,8 @@ import {
 import { normalizeIsrc } from "../../utils/isrc";
 import { logger } from "../../utils/logger";
 import { Storage } from "../../utils/storage";
-import { searchTidalTracks } from "../../utils/tidal";
 import type { AudioModel } from "./model";
-import YTMusic from "ytmusic-api";
+import { ProviderRegistry } from "./providers";
 
 function createSeededRandom(seed: string) {
   let hash = 0;
@@ -456,59 +455,6 @@ export abstract class AudioService {
     return {
       suggestions: await AudioRepository.searchSuggestions(query, limit),
     };
-  }
-
-  static async searchYoutube(
-    query: string,
-  ): Promise<AudioModel.youtubeSearchResponse> {
-    const apiKey = process.env.YOUTUBE_API_KEY;
-    if (apiKey) {
-      const params = new URLSearchParams({
-        part: "snippet",
-        q: query,
-        type: "video",
-        videoCategoryId: "10",
-        maxResults: "10",
-        key: apiKey,
-      });
-      const response = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?${params}`,
-      );
-      if (!response.ok)
-        throw new Error(`YouTube API error: ${await response.text()}`);
-      const data = await response.json();
-      return data.items.map(
-        (item: {
-          id: { videoId: string };
-          snippet: {
-            title: string;
-            channelTitle: string;
-            thumbnails: { medium: { url: string } };
-          };
-        }) => ({
-          videoId: item.id.videoId,
-          title: item.snippet.title,
-          artist: item.snippet.channelTitle,
-          thumbnail: item.snippet.thumbnails.medium.url,
-        }),
-      );
-    } else {
-      const ytmusic = new YTMusic();
-      await ytmusic.initialize();
-      const searchResults = await ytmusic.searchSongs(query);
-      return searchResults.map((result: any) => ({
-        videoId: result.videoId,
-        title: result.title,
-        artist: result.artists?.[0]?.name || "Unknown Artist",
-        thumbnail: result.thumbnails?.[0]?.url || "",
-      }));
-    }
-  }
-
-  static async searchTidal(
-    query: string,
-  ): Promise<AudioModel.tidalSearchResponse> {
-    return await searchTidalTracks(query, 10);
   }
 
   static async getRandomAudioFiles(options: {
