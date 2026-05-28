@@ -27,6 +27,7 @@ import {
   getTidalCollectionInfo,
 } from "../../utils/tidal";
 import { getIsrcFromDeezerSearch } from "../../utils/deezer";
+import { getIsrcFromMusicBrainzSearch } from "../../utils/musicbrainz";
 import { AudioService } from "./service";
 import { NO_ISRC_SENTINEL, normalizeIsrc } from "../../utils/isrc";
 
@@ -108,6 +109,15 @@ export abstract class DownloadService {
     });
     if (deezerIsrc) {
       return deezerIsrc;
+    }
+
+    const musicbrainzIsrc = await getIsrcFromMusicBrainzSearch({
+      title: metadata?.title,
+      artist: metadata?.artist,
+      signal,
+    });
+    if (musicbrainzIsrc) {
+      return musicbrainzIsrc;
     }
 
     return NO_ISRC_SENTINEL;

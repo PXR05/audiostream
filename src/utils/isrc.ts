@@ -38,3 +38,13 @@ export function normalizeIsrc(value: unknown): string | null {
 export function toCheckedIsrc(value: unknown): string {
   return normalizeIsrc(value) ?? NO_ISRC_SENTINEL;
 }
+
+export function cleanQueryTerm(value: string | null | undefined): string {
+  if (!value) return "";
+  return value
+    .replace(/\s*[\(\[][^)]*?(official|video|audio|music|lyrics|lyric|hd|hq|remaster|edit|version|visualizer|mv)[^)]*?[\)\]]/gi, "")
+    .replace(/\s*(ft\.|feat\.|featuring|with)\s+.*/gi, "")
+    .replace(/\s*-\s*Topic$/i, "")
+    .trim();
+}
+

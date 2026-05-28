@@ -1,4 +1,4 @@
-import { normalizeIsrc } from "./isrc";
+import { normalizeIsrc, cleanQueryTerm } from "./isrc";
 
 const DEEZER_API_URL = "https://api.deezer.com/search";
 const DEEZER_API_TIMEOUT_MS = 10_000;
@@ -83,10 +83,10 @@ export async function getIsrcFromDeezerSearch(input: {
   artist?: string | null;
   signal?: AbortSignal;
 }): Promise<string | null> {
-  const title = input.title?.trim();
+  const title = cleanQueryTerm(input.title);
   if (!title) return null;
 
-  const artist = input.artist?.trim() ?? "";
+  const artist = cleanQueryTerm(input.artist);
   const query = `${title} ${artist}`.trim();
   const titleNorm = normalizeText(title);
   const artistNorm = normalizeText(artist);

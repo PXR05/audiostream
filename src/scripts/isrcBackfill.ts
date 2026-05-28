@@ -3,6 +3,7 @@ import type { AudioFile } from "../db/schema";
 import { AudioRepository } from "../db/repositories";
 import { TEMP_DIR } from "../utils/helpers";
 import { getIsrcFromDeezerSearch } from "../utils/deezer";
+import { getIsrcFromMusicBrainzSearch } from "../utils/musicbrainz";
 import { getTidalTrackIsrc } from "../utils/tidal";
 import { NO_ISRC_SENTINEL, normalizeIsrc } from "../utils/isrc";
 import { logger } from "../utils/logger";
@@ -66,6 +67,7 @@ async function main() {
     failed: 0,
     fromTidal: 0,
     fromDeezer: 0,
+    fromMusicBrainz: 0,
     markedSentinel: 0,
   };
 
@@ -107,6 +109,17 @@ async function main() {
           }
         }
 
+        if (!resolvedIsrc) {
+          resolvedIsrc = await getIsrcFromMusicBrainzSearch({
+            title: audio.title,
+            artist: audio.artist,
+          });
+
+          if (resolvedIsrc) {
+            stats.fromMusicBrainz++;
+          }
+        }
+
         if (resolvedIsrc) {
           await AudioRepository.update(audio.id, { isrc: resolvedIsrc });
           stats.updated++;
@@ -124,7 +137,7 @@ async function main() {
     }
 
     logger.info(
-      `ISRC backfill finished. candidates=${stats.candidates}, processed=${stats.processed}, updated=${stats.updated}, markedSentinel=${stats.markedSentinel}, failed=${stats.failed}, sourceTidal=${stats.fromTidal}, sourceDeezer=${stats.fromDeezer}`,
+      `ISRC backfill finished. candidates=${stats.candidates}, processed=${stats.processed}, updated=${stats.updated}, markedSentinel=${stats.markedSentinel}, failed=${stats.failed}, sourceTidal=${stats.fromTidal}, sourceDeezer=${stats.fromDeezer}, sourceMusicBrainz=${stats.fromMusicBrainz}`,
       { context: CONTEXT },
     );
   } catch (error) {
