@@ -47,6 +47,78 @@ function shuffleWithSeed<T>(array: T[], seed: string): T[] {
 }
 
 export abstract class AudioService {
+  private static streamTickets = new Map<
+    string,
+    {
+      userId: string;
+      username: string;
+      role: "admin" | "user";
+      sessionId: string;
+      trackId: string;
+      expiresAt: number;
+    }
+  >();
+
+  static async createStreamTicket(
+    trackId: string,
+    authData: {
+      userId: string;
+      username: string;
+      role: "admin" | "user";
+      sessionId: string;
+    },
+    ttlSeconds: number = 300,
+  ): Promise<{ ticket: string; expiresAt: number }> {
+    await this.getAudioById(trackId, authData.userId);
+
+    const ticket = `st_${crypto.randomUUID()}`;
+    const expiresAt = Date.now() + ttlSeconds * 1000;
+
+    this.streamTickets.set(ticket, {
+      userId: authData.userId,
+      username: authData.username,
+      role: authData.role,
+      sessionId: authData.sessionId,
+      trackId,
+      expiresAt,
+    });
+
+    this.cleanExpiredTickets();
+
+    return { ticket, expiresAt };
+  }
+
+  static validateStreamTicket(ticketId: string, trackId?: string) {
+    const data = this.streamTickets.get(ticketId);
+    if (!data) return null;
+
+    if (Date.now() > data.expiresAt) {
+      this.streamTickets.delete(ticketId);
+      return null;
+    }
+
+    if (trackId && data.trackId !== trackId) {
+      return null;
+    }
+
+    return {
+      userId: data.userId,
+      username: data.username,
+      role: data.role,
+      isAdmin: data.role === "admin",
+      sessionId: data.sessionId,
+    };
+  }
+
+  private static cleanExpiredTickets() {
+    const now = Date.now();
+    for (const [ticketId, data] of this.streamTickets.entries()) {
+      if (now > data.expiresAt) {
+        this.streamTickets.delete(ticketId);
+      }
+    }
+  }
+
   static async extractMetadata(
     filePath: string,
   ): Promise<AudioModel.audioMetadata | null> {

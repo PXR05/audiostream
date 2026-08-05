@@ -226,6 +226,23 @@ export const audioController = new Elysia({ prefix: "/audio", tags: ["audio"] })
     },
   )
 
+  .post(
+    "/:id/ticket",
+    async ({ params: { id }, auth }) => {
+      return await AudioService.createStreamTicket(id, auth);
+    },
+    {
+      isAuth: true,
+      response: {
+        200: t.Object({
+          ticket: t.String(),
+          expiresAt: t.Number(),
+        }),
+        404: AudioModel.errorResponse,
+      },
+    },
+  )
+
   .get(
     "/:id/stream",
     async ({ params: { id }, set, request, auth }) => {

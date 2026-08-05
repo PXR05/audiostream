@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { logger } from "./logger";
 import { validateSession } from "../modules/auth/service";
+import { AudioService } from "../modules/audio/service";
 import bearer from "@elysiajs/bearer";
 
 export type AuthData = {
@@ -25,7 +26,28 @@ export const getSessionCookieOptions = (sessionId: string) => ({
 
 export const authPlugin = new Elysia({ name: "auth" }).use(bearer()).macro({
   isAuth: {
-    async resolve({ set, cookie, bearer }) {
+    async resolve({ set, cookie, bearer, query, request }) {
+      const ticket = (query as Record<string, string | undefined>)?.ticket;
+      if (ticket && typeof ticket === "string" && request?.url) {
+        try {
+          const url = new URL(request.url);
+          const segments = url.pathname.split("/").filter(Boolean);
+          const isStreamRoute =
+            segments.length >= 2 && segments[segments.length - 1] === "stream";
+
+          if (isStreamRoute) {
+            const trackId = segments[segments.length - 2];
+            const ticketAuth = AudioService.validateStreamTicket(
+              ticket,
+              trackId,
+            );
+            if (ticketAuth) {
+              return { auth: ticketAuth };
+            }
+          }
+        } catch {}
+      }
+
       const sessionId = cookie[SESSION_COOKIE_NAME].cookie.value ?? bearer;
 
       if (
