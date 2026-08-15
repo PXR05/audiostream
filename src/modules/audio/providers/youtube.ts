@@ -105,10 +105,19 @@ export class YoutubeProvider extends BaseAudioProvider {
   }
 
   private ytDlpBaseArgs(cookies: boolean): string[] {
+    const potUrl = process.env.YOUTUBE_POT_URL;
+
     return [
       ...(cookies ? ["--cookies", "cookies.txt"] : []),
       "--extractor-args",
-      "youtube:player_client=default,mweb",
+      "youtube:player_client=android,ios",
+
+      // POT: Uncomment the lines below and comment out "youtube:player_client=android,ios" above
+      // if you run the BgUtils POT provider container and want full web/mweb format access:
+      // ...(potUrl ? ["--extractor-args", `youtubepot-bgutilhttp:base_url=${potUrl}`] : []),
+      // "--extractor-args",
+      // "youtube:player_client=default,mweb",
+
       "-f",
       "bestaudio",
       "-x",
