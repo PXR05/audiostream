@@ -109,7 +109,7 @@ export class YoutubeProvider extends BaseAudioProvider {
 
     return [
       ...(cookies ? ["--cookies", "cookies.txt"] : []),
-      "--extractor-args",
+      // "--extractor-args",
       // "youtube:player_client=android,ios",
 
       // POT: Uncomment the lines below and comment out "youtube:player_client=android,ios" above
