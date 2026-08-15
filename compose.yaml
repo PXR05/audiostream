@@ -40,13 +40,13 @@ services:
     restart: unless-stopped
 
   # Uncomment if you want to run the BgUtils YouTube Proof-of-Origin Token (POT) provider for mweb/web clients:
-  # pot-provider:
-  #   image: brainicism/bgutil-ytdlp-pot-provider:latest
-  #   ports:
-  #     - "4416:4416"
-  #   environment:
-  #     - TOKEN_TTL=6
-  #   restart: unless-stopped
+  pot-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    ports:
+      - "4416:4416"
+    environment:
+      - TOKEN_TTL=6
+    restart: unless-stopped
 
   # Uncomment if you want to run the S3-compatible storage in production. Make sure to set the appropriate environment variables and persist the data.
   # s3:

@@ -35,7 +35,7 @@ RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o 
 RUN chmod a+rx /usr/bin/yt-dlp
 
 # Uncomment if using the bgutil-ytdlp-pot-provider plugin with yt-dlp:
-# RUN apt-get install -y python3-pip && pip install --break-system-packages -U bgutil-ytdlp-pot-provider
+RUN apt-get install -y python3-pip && pip install --break-system-packages -U bgutil-ytdlp-pot-provider
 
 COPY --from=build /app/server.js ./server.js
 COPY --from=build /app/src/db/migrations ./src/db/migrations
