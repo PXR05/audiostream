@@ -31,7 +31,7 @@ RUN apt-get install -y python3 --no-install-recommends
 RUN apt-get install -y python3-mutagen
 RUN apt-get install -y curl
 
-RUN curl -fsSL https://deno.land | sh
+RUN curl -fsSL https://deno.land/install.sh | sh
 
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/bin/yt-dlp
 RUN chmod a+rx /usr/bin/yt-dlp
