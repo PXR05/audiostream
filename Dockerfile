@@ -30,6 +30,7 @@ RUN apt-get update
 RUN apt-get install -y python3 --no-install-recommends
 RUN apt-get install -y python3-mutagen
 RUN apt-get install -y curl
+RUN apt-get install -y unzip
 
 RUN curl -fsSL https://deno.land/install.sh | sh
 
