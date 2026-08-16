@@ -80,6 +80,20 @@ logger.info(`Environment: ${process.env.NODE_ENV || "development"}`, {
   context: "SERVER",
 });
 
+process.on("unhandledRejection", (reason) => {
+  logger.error(
+    "Unhandled Rejection:",
+    reason instanceof Error ? reason : new Error(String(reason)),
+    { context: "PROCESS" },
+  );
+});
+
+process.on("uncaughtException", (error) => {
+  logger.error("Uncaught Exception:", error, {
+    context: "PROCESS",
+  });
+});
+
 process.on("SIGINT", async () => {
   logger.info("Shutting down...", { context: "SERVER" });
   process.exit(0);
@@ -89,3 +103,4 @@ process.on("SIGTERM", async () => {
   logger.info("Shutting down...", { context: "SERVER" });
   process.exit(0);
 });
+

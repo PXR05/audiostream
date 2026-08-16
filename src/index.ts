@@ -9,6 +9,20 @@ import { Storage } from "./utils/storage";
 import { AuthService } from "./modules/auth/service";
 import migrate from "./scripts/migrate";
 
+process.on("unhandledRejection", (reason) => {
+  logger.error(
+    "Unhandled Rejection:",
+    reason instanceof Error ? reason : new Error(String(reason)),
+    { context: "PROCESS" },
+  );
+});
+
+process.on("uncaughtException", (error) => {
+  logger.error("Uncaught Exception:", error, {
+    context: "PROCESS",
+  });
+});
+
 async function setupDirectories() {
   try {
     await mkdir(TEMP_DIR, { recursive: true });

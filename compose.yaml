@@ -25,7 +25,7 @@ services:
       S3_BUCKET: ${S3_BUCKET}
       
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
-      # YOUTUBE_POT_URL: http://pot-provider:4416
+      YOUTUBE_POT_URL: http://pot-provider:4416
       TIDAL_PROXY_LIST_URL: ${TIDAL_PROXY_LIST_URL}
     volumes:
       - ./logs:/usr/src/app/logs:rw

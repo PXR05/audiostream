@@ -56,6 +56,7 @@ export abstract class BaseAudioProvider {
       resolve = res;
       reject = rej;
     });
+    promise.catch(() => {});
     BaseAudioProvider.inFlightDownloads.set(key, { subscribers, promise });
     const broadcast: EmitProgress = (event) => {
       sendEvent(event);

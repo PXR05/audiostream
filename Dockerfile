@@ -33,6 +33,7 @@ RUN apt-get install -y curl
 RUN apt-get install -y unzip
 
 RUN curl -fsSL https://deno.land/install.sh | sh
+RUN mv /root/.deno/bin/deno /usr/local/bin
 
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/bin/yt-dlp
 RUN chmod a+rx /usr/bin/yt-dlp

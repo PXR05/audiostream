@@ -343,7 +343,7 @@ export class YoutubeProvider extends BaseAudioProvider {
         logger.error("yt-dlp failed", new Error(stderr), {
           context: "YOUTUBE_PROVIDER",
         });
-        throw new Error(`Download failed: ${stderr.substring(0, 200)}`);
+        throw new Error(`Download failed: ${stderr.substring(0, Math.min(500, stderr.length))}`);
       }
 
       sendEvent({ type: "info", message: "Processing file..." });
