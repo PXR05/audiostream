@@ -105,19 +105,33 @@ export class YoutubeProvider extends BaseAudioProvider {
   }
 
   private ytDlpBaseArgs(cookies: boolean): string[] {
-    const potUrl = process.env.YOUTUBE_POT_URL;
+    const usePot =
+      process.env.YOUTUBE_USE_POT?.toLowerCase() === "true";
+    const potUrl =
+      process.env.YOUTUBE_POT_URL || (usePot ? "http://localhost:4416" : undefined);
+    const client =
+      process.env.YOUTUBE_CLIENT ||
+      (usePot ? "default,mweb" : "tv_simply,android_vr");
+
+    const extractorArgs: string[] = [];
+
+    if (usePot && potUrl) {
+      extractorArgs.push(
+        "--extractor-args",
+        `youtubepot-bgutilhttp:base_url=${potUrl}`,
+      );
+    }
+
+    if (client && client !== "none" && client !== "false") {
+      extractorArgs.push(
+        "--extractor-args",
+        `youtube:player_client=${client}`,
+      );
+    }
 
     return [
       ...(cookies ? ["--cookies", "cookies.txt"] : []),
-      "--extractor-args",
-      "youtube:player_client=tv_simply,android_vr",
-
-      // POT: Uncomment the lines below and comment out "youtube:player_client=android,ios" above
-      // if you run the BgUtils POT provider container and want full web/mweb format access:
-      // ...(potUrl ? ["--extractor-args", `youtubepot-bgutilhttp:base_url=${potUrl}`] : []),
-      // "--extractor-args",
-      // "youtube:player_client=default,mweb",
-
+      ...extractorArgs,
       "-f",
       "bestaudio",
       "-x",
