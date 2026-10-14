@@ -2,12 +2,11 @@ import { status } from "elysia";
 import { extname } from "path";
 import type { PlaylistModel } from "./model";
 import { PlaylistRepository, AudioRepository } from "../../db/repositories";
-import { generateId } from "../../utils/helpers";
+import { generateId, MAX_IMAGE_SIZE } from "../../utils/helpers";
 import { logger } from "../../utils/logger";
 import { Storage } from "../../utils/storage";
 
 const ALLOWED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 
 export abstract class PlaylistService {
   static generatePlaylistId(prefix: string, name: string): string {

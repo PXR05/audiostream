@@ -4,7 +4,26 @@ export function generateId(): string {
 
 export const UPLOADS_DIR = "uploads";
 export const TEMP_DIR = "temp";
-export const MAX_FILE_SIZE = 100 * 1024 * 1024;
+
+function parseSizeMbEnv(
+  value: string | undefined,
+  defaultMb: number,
+): number {
+  if (value === undefined || value.trim() === "") {
+    return defaultMb * 1024 * 1024;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return defaultMb * 1024 * 1024;
+  }
+  return Math.floor(parsed * 1024 * 1024);
+}
+
+export const MAX_FILE_SIZE = parseSizeMbEnv(process.env.MAX_FILE_SIZE_MB, 100);
+export const MAX_IMAGE_SIZE = parseSizeMbEnv(
+  process.env.MAX_IMAGE_SIZE_MB,
+  10,
+);
 export const ALLOWED_AUDIO_EXTENSIONS = [
   ".mp3",
   ".opus",
