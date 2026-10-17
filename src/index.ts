@@ -3,7 +3,7 @@ import cluster from "node:cluster";
 import os from "node:os";
 import process from "node:process";
 import cleanupTemp from "./scripts/cleanupTemp";
-import { TEMP_DIR, UPLOADS_DIR } from "./utils/helpers";
+import { MODELS_DIR, TEMP_DIR, UPLOADS_DIR } from "./utils/helpers";
 import { logger } from "./utils/logger";
 import { Storage } from "./utils/storage";
 import { AuthService } from "./modules/auth/service";
@@ -24,28 +24,22 @@ process.on("uncaughtException", (error) => {
 });
 
 async function setupDirectories() {
-  try {
-    await mkdir(TEMP_DIR, { recursive: true });
-    logger.info(`Temp directory ready: ${TEMP_DIR}`, {
-      context: "STARTUP",
-    });
-  } catch (error) {
-    logger.error("Failed to create temp directory", error, {
-      context: "STARTUP",
-    });
-    process.exit(1);
-  }
-
-  try {
-    await mkdir(UPLOADS_DIR, { recursive: true });
-    logger.info(`Uploads directory ready: ${UPLOADS_DIR}`, {
-      context: "STARTUP",
-    });
-  } catch (error) {
-    logger.error("Failed to create uploads directory", error, {
-      context: "STARTUP",
-    });
-    process.exit(1);
+  for (const [label, dir] of [
+    ["Temp", TEMP_DIR],
+    ["Uploads", UPLOADS_DIR],
+    ["Models", MODELS_DIR],
+  ] as const) {
+    try {
+      await mkdir(dir, { recursive: true });
+      logger.info(`${label} directory ready: ${dir}`, {
+        context: "STARTUP",
+      });
+    } catch (error) {
+      logger.error(`Failed to create ${label.toLowerCase()} directory`, error, {
+        context: "STARTUP",
+      });
+      process.exit(1);
+    }
   }
 }
 

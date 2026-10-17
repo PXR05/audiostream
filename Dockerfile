@@ -16,6 +16,7 @@ RUN bun build \
 --minify-whitespace \
 --minify-syntax \
 --target bun \
+--external onnxruntime-node \
 --outfile server.js \
 src/index.ts
 
@@ -31,6 +32,7 @@ RUN apt-get install -y python3 --no-install-recommends
 RUN apt-get install -y python3-mutagen
 RUN apt-get install -y curl
 RUN apt-get install -y unzip
+RUN apt-get install -y libgomp1
 
 RUN curl -fsSL https://deno.land/install.sh | sh
 RUN mv /root/.deno/bin/deno /usr/local/bin
@@ -38,11 +40,12 @@ RUN mv /root/.deno/bin/deno /usr/local/bin
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/bin/yt-dlp
 RUN chmod a+rx /usr/bin/yt-dlp
 
-# Uncomment if using the bgutil-ytdlp-pot-provider plugin with yt-dlp:
 RUN apt-get install -y python3-pip && pip install --break-system-packages -U bgutil-ytdlp-pot-provider
 
 COPY --from=build /app/server.js ./server.js
 COPY --from=build /app/src/db/migrations ./src/db/migrations
+COPY --from=build /app/node_modules/onnxruntime-node ./node_modules/onnxruntime-node
+COPY --from=build /app/node_modules/onnxruntime-common ./node_modules/onnxruntime-common
 
 ENV NODE_ENV=production
 

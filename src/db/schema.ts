@@ -6,6 +6,7 @@ import {
   index,
   timestamp,
   primaryKey,
+  vector,
 } from "drizzle-orm/pg-core";
 
 export const audioFiles = pgTable(
@@ -178,3 +179,22 @@ export const sessions = pgTable(
 
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
+
+export const audioEmbeddings = pgTable(
+  "audio_embeddings",
+  {
+    audioId: text("audio_id")
+      .primaryKey()
+      .references(() => audioFiles.id, { onDelete: "cascade" }),
+    modelName: text("model_name").notNull(),
+    embedding: vector("embedding", { dimensions: 1280 }),
+    analysisVersion: integer("analysis_version").default(1).notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("audio_embeddings_model_idx").on(table.modelName),
+  ],
+);
+
+export type AudioEmbedding = typeof audioEmbeddings.$inferSelect;
+export type NewAudioEmbedding = typeof audioEmbeddings.$inferInsert;

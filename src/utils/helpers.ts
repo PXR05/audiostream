@@ -4,6 +4,7 @@ export function generateId(): string {
 
 export const UPLOADS_DIR = "uploads";
 export const TEMP_DIR = "temp";
+export const MODELS_DIR = "models";
 
 function parseSizeMbEnv(
   value: string | undefined,

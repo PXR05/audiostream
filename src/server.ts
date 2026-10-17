@@ -4,6 +4,8 @@ import { Elysia } from "elysia";
 import { audioController } from "./modules/audio";
 import { authController } from "./modules/auth";
 import { playlistController } from "./modules/playlist";
+import { radioController } from "./modules/radio";
+import { RadioService } from "./modules/radio/service";
 import { userController } from "./modules/user";
 import { corsConfig } from "./utils/cors";
 import { logger } from "./utils/logger";
@@ -36,6 +38,7 @@ const app = new Elysia()
     );
   })
   .use(authController)
+  .use(radioController)
   .use(audioController)
   .use(playlistController)
   .use(userController)
@@ -79,6 +82,8 @@ logger.info(
 logger.info(`Environment: ${process.env.NODE_ENV || "development"}`, {
   context: "SERVER",
 });
+
+RadioService.startIndexer();
 
 process.on("unhandledRejection", (reason) => {
   logger.error(

@@ -2,6 +2,7 @@ node_modules/
 .git/
 .env
 uploads/
+models/
 *.db
 dist/
 logs/

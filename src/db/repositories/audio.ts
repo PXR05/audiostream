@@ -15,6 +15,7 @@ import {
   count,
   and,
   gt,
+  inArray,
   isNull,
 } from "drizzle-orm";
 import type { AudioModel } from "../../modules/audio/model";
@@ -32,7 +33,13 @@ export abstract class AudioRepository {
 
   static async create(data: NewAudioFile): Promise<AudioFile> {
     const result = await db.insert(audioFiles).values(data).returning();
-    return result[0];
+    const created = result[0];
+    if (created) {
+      void import("../../modules/radio/service")
+        .then(({ RadioService }) => RadioService.enqueueIndex(created.id))
+        .catch(() => {});
+    }
+    return created;
   }
 
   static async findAll(options?: {
@@ -163,6 +170,14 @@ export abstract class AudioRepository {
       .from(audioFiles)
       .where(and(eq(audioFiles.id, id), this.activeAudioCondition));
     return result[0] ?? null;
+  }
+
+  static async findByIds(ids: string[]): Promise<AudioFile[]> {
+    if (ids.length === 0) return [];
+    return await db
+      .select()
+      .from(audioFiles)
+      .where(and(inArray(audioFiles.id, ids), this.activeAudioCondition));
   }
 
   static async findByFilename(filename: string): Promise<AudioFile | null> {

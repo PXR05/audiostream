@@ -4,3 +4,4 @@ export { UserSettingsRepository } from "./userSettings";
 export { PlaylistRepository } from "./playlist";
 export { AudioFileUserRepository } from "./audioFileUser";
 export { SessionRepository } from "./session";
+export { RadioRepository, type CandidateRow } from "./radio";

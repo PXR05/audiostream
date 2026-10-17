@@ -19,6 +19,10 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       
+      RADIO_MODEL: ${RADIO_MODEL:-effnet}
+      RADIO_MODEL_DIR: ${RADIO_MODEL_DIR:-/usr/src/app/models}
+      RADIO_AUTO_INDEX: ${RADIO_AUTO_INDEX:-true}
+      
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
       DATABASE_URL: ${DATABASE_URL}
       
@@ -36,6 +40,7 @@ services:
       - ./logs:/usr/src/app/logs:rw
       - ./uploads:/usr/src/app/uploads:rw
       - ./temp:/usr/src/app/temp:rw
+      - ./models:/usr/src/app/models:ro
       - ./cookies.txt:/usr/src/app/cookies.txt:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/health"]
@@ -79,7 +84,7 @@ services:
   #   restart: unless-stopped
 
   db:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
