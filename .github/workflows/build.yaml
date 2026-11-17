@@ -9,10 +9,6 @@ on:
       - "Dockerfile"
       - ".dockerignore"
       - "package.json"
-  schedule:
-    # Rebuild roughly every two weeks so bundled yt-dlp stays current.
-    # GitHub cron has no true biweekly syntax; 1st and 15th is the closest.
-    - cron: "0 4 1,15 * *"
   workflow_dispatch:
 
 jobs:
