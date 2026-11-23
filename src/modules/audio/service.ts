@@ -1,7 +1,5 @@
 import { status } from "elysia";
 import { existsSync, unlinkSync } from "fs";
-import jimp from "jimp";
-import * as mm from "music-metadata";
 import { extname, join } from "path";
 import {
   AudioFileUserRepository,
@@ -11,15 +9,17 @@ import {
 import {
   ALLOWED_AUDIO_EXTENSIONS,
   generateId,
-  getWebPImageFileName,
   MAX_FILE_SIZE,
   TEMP_DIR,
 } from "../../utils/helpers";
-import { normalizeIsrc } from "../../utils/isrc";
 import { logger } from "../../utils/logger";
+import {
+  extractAndStoreCoverArt,
+  extractAudioMetadata,
+  serializeExtraMetadata,
+} from "../../utils/metadata";
 import { Storage } from "../../utils/storage";
 import type { AudioModel } from "./model";
-import { ProviderRegistry } from "./providers";
 
 function createSeededRandom(seed: string) {
   let hash = 0;
@@ -121,124 +121,77 @@ export abstract class AudioService {
 
   static async extractMetadata(
     filePath: string,
+    originalFilename?: string,
   ): Promise<AudioModel.audioMetadata | null> {
-    try {
-      let metadata: mm.IAudioMetadata;
-      try {
-        metadata = await mm.parseFile(filePath, {
-          skipCovers: true,
-          duration: true,
-        });
-      } catch {
-        metadata = await mm.parseFile(filePath, {
-          skipCovers: true,
-          duration: true,
-          skipPostHeaders: true,
-        });
-      }
-      return {
-        title: metadata.common.title,
-        artist: metadata.common.artist,
-        album: metadata.common.album,
-        isrc: normalizeIsrc(metadata.common.isrc) ?? undefined,
-        year: metadata.common.year,
-        genre: metadata.common.genre,
-        duration: metadata.format.duration,
-        bitrate: metadata.format.bitrate,
-        sampleRate: metadata.format.sampleRate,
-        bitDepth: metadata.format.bitsPerSample,
-        channels: metadata.format.numberOfChannels,
-        format: metadata.format.container,
-      };
-    } catch (error) {
-      logger.error("Metadata extraction failed", error, { context: "AUDIO" });
-      return null;
-    }
+    const extracted = await extractAudioMetadata(filePath, {
+      includeCover: false,
+      originalFilename,
+    });
+    return extracted?.metadata ?? null;
   }
 
   static async extractAlbumArt(
     filePath: string,
-    audioId: string,
+    _audioId?: string,
   ): Promise<string | null> {
-    const webpImageFileName = getWebPImageFileName(audioId);
-    const tempImagePath = join(TEMP_DIR, webpImageFileName);
+    return await extractAndStoreCoverArt(filePath);
+  }
+
+  static async reextractMetadata(
+    audioId: string,
+    options?: { updateCover?: boolean },
+  ): Promise<AudioModel.audioFile | null> {
+    const existing = await AudioRepository.findById(audioId);
+    if (!existing) throw status(404, "Audio file not found");
+
+    const tempPath = join(TEMP_DIR, `reextract_${audioId}_${existing.filename}`);
     try {
-      let pictures: mm.IPicture[] = [];
-      try {
-        const metadata = await mm.parseFile(filePath);
-        pictures = metadata.common.picture ?? [];
-      } catch {
-        logger.warn("Embedded album art parse failed, using ffmpeg fallback", {
-          context: "AUDIO",
-        });
+      const data = await Storage.download(existing.filename);
+      await Bun.write(tempPath, data);
+
+      const updateCover = options?.updateCover ?? false;
+      const extracted = await extractAudioMetadata(tempPath, {
+        includeCover: updateCover,
+      });
+      if (!extracted) return null;
+
+      const patch = AudioRepository.toMetadataPatch(
+        extracted.metadata,
+        serializeExtraMetadata(extracted.extra),
+      );
+      patch.title = patch.title ?? existing.title;
+      patch.artist = patch.artist ?? existing.artist;
+      patch.album = patch.album ?? existing.album;
+      patch.year = patch.year ?? existing.year;
+      patch.genre = patch.genre ?? existing.genre;
+      patch.duration = patch.duration ?? existing.duration;
+      patch.bitrate = patch.bitrate ?? existing.bitrate;
+      patch.sampleRate = patch.sampleRate ?? existing.sampleRate;
+      patch.channels = patch.channels ?? existing.channels;
+      patch.format = patch.format ?? existing.format;
+      if ((!patch.bitDepth || patch.bitDepth === 0) && existing.bitDepth > 0) {
+        patch.bitDepth = existing.bitDepth;
+      }
+      if (extracted.metadata.isrc && !existing.isrc) {
+        patch.isrc = extracted.metadata.isrc;
       }
 
-      for (const picture of pictures) {
-        try {
-          const image = await jimp.read(Buffer.from(picture.data));
-          const w = image.getWidth();
-          const h = image.getHeight();
-          const s = Math.min(w, h);
-          await image
-            .crop(Math.floor((w - s) / 2), Math.floor((h - s) / 2), s, s)
-            .quality(100)
-            .writeAsync(tempImagePath);
-          const imageData = await Bun.file(tempImagePath).arrayBuffer();
-          await Storage.upload(
-            webpImageFileName,
-            new Uint8Array(imageData),
-            "image/webp",
-          );
-          return webpImageFileName;
-        } catch {
-          logger.warn("Skipping invalid embedded album art frame", {
-            context: "AUDIO",
-          });
+      if (updateCover) {
+        const newCover = await extractAndStoreCoverArt(
+          tempPath,
+          extracted.pictures,
+        );
+        if (newCover) {
+          patch.imageFile = newCover;
         }
       }
 
-      const fallbackCoverPath = join(TEMP_DIR, `cover_${audioId}.jpg`);
-      const extractProc = Bun.spawn(
-        [
-          "ffmpeg",
-          "-i",
-          filePath,
-          "-an",
-          "-frames:v",
-          "1",
-          "-q:v",
-          "2",
-          "-y",
-          fallbackCoverPath,
-        ],
-        { stdout: "pipe", stderr: "pipe" },
-      );
-      await extractProc.exited;
-
-      if (!existsSync(fallbackCoverPath)) return null;
-
-      const fallbackImage = await jimp.read(fallbackCoverPath);
-      const fw = fallbackImage.getWidth();
-      const fh = fallbackImage.getHeight();
-      const fs = Math.min(fw, fh);
-      await fallbackImage
-        .crop(Math.floor((fw - fs) / 2), Math.floor((fh - fs) / 2), fs, fs)
-        .quality(100)
-        .writeAsync(tempImagePath);
-
-      const imageData = await Bun.file(tempImagePath).arrayBuffer();
-      await Storage.upload(
-        webpImageFileName,
-        new Uint8Array(imageData),
-        "image/webp",
-      );
-      if (existsSync(fallbackCoverPath)) unlinkSync(fallbackCoverPath);
-      return webpImageFileName;
-    } catch (error) {
-      logger.error("Album art extraction failed", error, { context: "AUDIO" });
-      return null;
+      const updated = await AudioRepository.update(audioId, patch);
+      return updated
+        ? AudioRepository.toAudioModel(updated, { includeLyrics: true })
+        : null;
     } finally {
-      if (existsSync(tempImagePath)) unlinkSync(tempImagePath);
+      if (existsSync(tempPath)) unlinkSync(tempPath);
     }
   }
 
@@ -259,7 +212,7 @@ export abstract class AudioService {
     userId: string;
     page?: number;
     limit?: number;
-    sortBy?: "filename" | "size" | "uploadedAt" | "title";
+    sortBy?: "filename" | "size" | "uploadedAt" | "title" | "album";
     sortOrder?: "asc" | "desc";
     lastFetchedAt?: number;
     artist?: string;
@@ -340,10 +293,14 @@ export abstract class AudioService {
     }
 
     try {
-      const [extractedImage, extractedMetadata] = await Promise.all([
-        this.extractAlbumArt(tempFilePath, id),
-        this.extractMetadata(tempFilePath),
-      ]);
+      const extracted = await extractAudioMetadata(tempFilePath, {
+        includeCover: true,
+        originalFilename: file.name,
+      });
+      const extractedImage = await extractAndStoreCoverArt(
+        tempFilePath,
+        extracted?.pictures,
+      );
       await Storage.uploadFromFile(
         filename,
         tempFilePath,
@@ -354,8 +311,12 @@ export abstract class AudioService {
           id,
           filename,
           file.size,
-          extractedMetadata ?? undefined,
+          extracted?.metadata,
           extractedImage ?? undefined,
+          undefined,
+          undefined,
+          undefined,
+          serializeExtraMetadata(extracted?.extra),
         ),
       );
       if (userId) {
@@ -416,7 +377,7 @@ export abstract class AudioService {
   ): Promise<AudioModel.audioFile> {
     const dbFile = await AudioRepository.findById(id, userId);
     if (!dbFile) throw status(404, "Audio file not found");
-    return AudioRepository.toAudioModel(dbFile);
+    return AudioRepository.toAudioModel(dbFile, { includeLyrics: true });
   }
 
   static async deleteAudio(

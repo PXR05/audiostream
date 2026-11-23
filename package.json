@@ -7,7 +7,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "backfill:metadata": "bun run src/scripts/metadataBackfill.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1009.0",
@@ -17,10 +18,10 @@
     "drizzle-orm": "^0.45.1",
     "elysia": "^1.4.27",
     "hash-wasm": "^4.12.0",
-    "jimp": "0.22.12",
-    "music-metadata": "^11.12.3",
     "onnxruntime-node": "^1.30.0",
     "pg": "^8.20.0",
+    "sharp": "^0.35.5",
+    "taglib-wasm": "^2.5.0",
     "ytmusic-api": "^5.3.1"
   },
   "devDependencies": {

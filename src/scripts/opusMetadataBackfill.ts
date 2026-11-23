@@ -3,30 +3,23 @@ import { existsSync, unlinkSync } from "fs";
 import { join } from "path";
 import type { AudioFile } from "../db/schema";
 import { AudioRepository } from "../db/repositories";
-import { AudioService } from "../modules/audio/service";
 import { TEMP_DIR } from "../utils/helpers";
 import { logger } from "../utils/logger";
+import {
+  extractAudioMetadata,
+  serializeExtraMetadata,
+  type ExtractedAudioResult,
+} from "../utils/metadata";
 import { Storage } from "../utils/storage";
 
 const CONTEXT = "BACKFILL";
 
-function toPatch(
-  metadata: Awaited<ReturnType<typeof AudioService.extractMetadata>>,
-) {
-  if (!metadata) return null;
-  return {
-    title: metadata.title ?? null,
-    artist: metadata.artist ?? null,
-    album: metadata.album ?? null,
-    year: metadata.year ?? null,
-    genre: metadata.genre ? JSON.stringify(metadata.genre) : null,
-    duration: metadata.duration ?? null,
-    bitrate: metadata.bitrate ?? null,
-    sampleRate: metadata.sampleRate ?? null,
-    bitDepth: metadata.bitDepth ?? 0,
-    channels: metadata.channels ?? null,
-    format: metadata.format ?? null,
-  };
+function toPatch(extracted: ExtractedAudioResult | null) {
+  if (!extracted) return null;
+  return AudioRepository.toMetadataPatch(
+    extracted.metadata,
+    serializeExtraMetadata(extracted.extra),
+  );
 }
 
 function needsMetadataBackfill(file: AudioFile): boolean {
@@ -92,7 +85,9 @@ async function main() {
         const data = await Storage.download(file.filename);
         await Bun.write(tempPath, data);
 
-        const extracted = await AudioService.extractMetadata(tempPath);
+        const extracted = await extractAudioMetadata(tempPath, {
+          includeCover: false,
+        });
         const patch = toPatch(extracted);
 
         if (!patch) {

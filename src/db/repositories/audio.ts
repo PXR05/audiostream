@@ -46,7 +46,7 @@ export abstract class AudioRepository {
     userId?: string;
     page?: number;
     limit?: number;
-    sortBy?: "id" | "filename" | "size" | "uploadedAt" | "title";
+    sortBy?: "id" | "filename" | "size" | "uploadedAt" | "title" | "album";
     sortOrder?: "asc" | "desc";
     lastFetchedAt?: number;
     artist?: string;
@@ -60,28 +60,34 @@ export abstract class AudioRepository {
     const sortOrder = options?.sortOrder ?? "desc";
     const userId = options?.userId;
 
-    let orderByColumn;
+    const dir = sortOrder === "asc" ? asc : desc;
+    let orderByClauses;
     switch (sortBy) {
       case "id":
-        orderByColumn = audioFiles.id;
+        orderByClauses = [dir(audioFiles.id)];
         break;
       case "filename":
-        orderByColumn = audioFiles.filename;
+        orderByClauses = [dir(audioFiles.filename)];
         break;
       case "size":
-        orderByColumn = audioFiles.size;
+        orderByClauses = [dir(audioFiles.size)];
         break;
       case "title":
-        orderByColumn = audioFiles.title;
+        orderByClauses = [dir(audioFiles.title)];
+        break;
+      case "album":
+        orderByClauses = [
+          dir(audioFiles.album),
+          asc(audioFiles.discNumber),
+          asc(audioFiles.trackNumber),
+          asc(audioFiles.title),
+        ];
         break;
       case "uploadedAt":
       default:
-        orderByColumn = audioFiles.uploadedAt;
+        orderByClauses = [dir(audioFiles.uploadedAt)];
         break;
     }
-
-    const orderBy =
-      sortOrder === "asc" ? asc(orderByColumn) : desc(orderByColumn);
 
     if (userId) {
       const whereConditions = [
@@ -96,7 +102,14 @@ export abstract class AudioRepository {
       }
 
       if (options?.artist) {
-        whereConditions.push(ilike(audioFiles.artist, `%${options.artist}%`));
+        const artistPattern = `%${options.artist}%`;
+        whereConditions.push(
+          or(
+            ilike(audioFiles.artist, artistPattern),
+            ilike(audioFiles.albumArtist, artistPattern),
+            sql`EXISTS (SELECT 1 FROM unnest(${audioFiles.artists}) AS a WHERE a ILIKE ${artistPattern})`,
+          )!,
+        );
       }
 
       if (options?.album) {
@@ -104,7 +117,10 @@ export abstract class AudioRepository {
       }
 
       if (options?.genre) {
-        whereConditions.push(ilike(audioFiles.genre, `%${options.genre}%`));
+        const genreQuery = options.genre.trim();
+        whereConditions.push(
+          sql`EXISTS (SELECT 1 FROM unnest(${audioFiles.genre}) AS g WHERE lower(g) = lower(${genreQuery}))`,
+        );
       }
 
       const userFiles = await db
@@ -112,7 +128,7 @@ export abstract class AudioRepository {
         .from(audioFiles)
         .leftJoin(audioFileUsers, eq(audioFiles.id, audioFileUsers.audioFileId))
         .where(and(...whereConditions))
-        .orderBy(orderBy)
+        .orderBy(...orderByClauses)
         .limit(limit)
         .offset(offset);
 
@@ -132,7 +148,7 @@ export abstract class AudioRepository {
       .select()
       .from(audioFiles)
       .where(this.activeAudioCondition)
-      .orderBy(orderBy)
+      .orderBy(...orderByClauses)
       .limit(limit)
       .offset(offset);
 
@@ -450,7 +466,17 @@ export abstract class AudioRepository {
     ];
   }
 
-  static toAudioModel(dbFile: AudioFile): AudioModel.audioFile {
+  static toAudioModel(
+    dbFile: AudioFile,
+    options?: { includeLyrics?: boolean },
+  ): AudioModel.audioFile {
+    const includeLyrics = options?.includeLyrics ?? false;
+    const hasReplayGain =
+      dbFile.replayGainTrackGain !== null ||
+      dbFile.replayGainTrackPeak !== null ||
+      dbFile.replayGainAlbumGain !== null ||
+      dbFile.replayGainAlbumPeak !== null;
+
     return {
       id: dbFile.id,
       filename: dbFile.filename,
@@ -464,17 +490,73 @@ export abstract class AudioRepository {
       metadata: {
         title: dbFile.title ?? undefined,
         artist: dbFile.artist ?? undefined,
+        albumArtist: dbFile.albumArtist ?? undefined,
+        artists: dbFile.artists ?? undefined,
         album: dbFile.album ?? undefined,
+        trackNumber: dbFile.trackNumber ?? undefined,
+        totalTracks: dbFile.totalTracks ?? undefined,
+        discNumber: dbFile.discNumber ?? undefined,
+        totalDiscs: dbFile.totalDiscs ?? undefined,
+        compilation: dbFile.compilation || undefined,
         isrc: dbFile.isrc ?? undefined,
         year: dbFile.year ?? undefined,
-        genre: dbFile.genre ? JSON.parse(dbFile.genre) : undefined,
+        genre: dbFile.genre ?? undefined,
         duration: dbFile.duration ?? undefined,
         bitrate: dbFile.bitrate ?? undefined,
         sampleRate: dbFile.sampleRate ?? undefined,
         bitDepth: dbFile.bitDepth ?? undefined,
         channels: dbFile.channels ?? undefined,
         format: dbFile.format ?? undefined,
+        codec: dbFile.codec ?? undefined,
+        lossless: dbFile.lossless || undefined,
+        replayGain: hasReplayGain
+          ? {
+              trackGain: dbFile.replayGainTrackGain ?? undefined,
+              trackPeak: dbFile.replayGainTrackPeak ?? undefined,
+              albumGain: dbFile.replayGainAlbumGain ?? undefined,
+              albumPeak: dbFile.replayGainAlbumPeak ?? undefined,
+            }
+          : undefined,
+        lyrics: includeLyrics ? (dbFile.lyrics ?? undefined) : undefined,
       },
+    };
+  }
+
+  static toMetadataPatch(
+    metadata?: AudioModel.audioMetadata,
+    extra?: Record<string, unknown> | null,
+  ): Partial<NewAudioFile> {
+    return {
+      title: metadata?.title ?? null,
+      artist: metadata?.artist ?? null,
+      albumArtist: metadata?.albumArtist ?? null,
+      artists:
+        metadata?.artists && metadata.artists.length > 0
+          ? metadata.artists
+          : null,
+      album: metadata?.album ?? null,
+      trackNumber: metadata?.trackNumber ?? null,
+      totalTracks: metadata?.totalTracks ?? null,
+      discNumber: metadata?.discNumber ?? null,
+      totalDiscs: metadata?.totalDiscs ?? null,
+      compilation: metadata?.compilation ?? false,
+      year: metadata?.year ?? null,
+      genre:
+        metadata?.genre && metadata.genre.length > 0 ? metadata.genre : null,
+      duration: metadata?.duration ?? null,
+      bitrate: metadata?.bitrate ?? null,
+      sampleRate: metadata?.sampleRate ?? null,
+      bitDepth: metadata?.bitDepth ?? 0,
+      channels: metadata?.channels ?? null,
+      format: metadata?.format ?? null,
+      codec: metadata?.codec ?? null,
+      lossless: metadata?.lossless ?? false,
+      replayGainTrackGain: metadata?.replayGain?.trackGain ?? null,
+      replayGainAlbumGain: metadata?.replayGain?.albumGain ?? null,
+      replayGainTrackPeak: metadata?.replayGain?.trackPeak ?? null,
+      replayGainAlbumPeak: metadata?.replayGain?.albumPeak ?? null,
+      lyrics: metadata?.lyrics ?? null,
+      extra: extra ?? null,
     };
   }
 
@@ -487,6 +569,7 @@ export abstract class AudioRepository {
     youtubeId?: string,
     tidalId?: string,
     isrc?: string,
+    extra?: Record<string, unknown> | null,
   ): NewAudioFile {
     const normalizedIsrc = normalizeIsrc(isrc ?? metadata?.isrc);
 
@@ -500,17 +583,7 @@ export abstract class AudioRepository {
       updatedAt: new Date(),
       uploadedAt: new Date(),
       imageFile: imageFile ?? null,
-      title: metadata?.title ?? null,
-      artist: metadata?.artist ?? null,
-      album: metadata?.album ?? null,
-      year: metadata?.year ?? null,
-      genre: metadata?.genre ? JSON.stringify(metadata.genre) : null,
-      duration: metadata?.duration ?? null,
-      bitrate: metadata?.bitrate ?? null,
-      sampleRate: metadata?.sampleRate ?? null,
-      bitDepth: metadata?.bitDepth ?? 0,
-      channels: metadata?.channels ?? null,
-      format: metadata?.format ?? null,
+      ...this.toMetadataPatch(metadata, extra),
     };
   }
 }

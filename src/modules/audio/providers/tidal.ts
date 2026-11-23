@@ -10,6 +10,11 @@ import { AudioService } from "../service";
 import { AudioModel } from "../model";
 import { NO_ISRC_SENTINEL, normalizeIsrc } from "../../../utils/isrc";
 import {
+  extractAndStoreCoverArt,
+  extractAudioMetadata,
+  serializeExtraMetadata,
+} from "../../../utils/metadata";
+import {
   parseTidalResourceUrl,
   getDownloadUrl,
   parseManifest,
@@ -416,10 +421,13 @@ export class TidalProvider extends BaseAudioProvider {
         unlinkSync(embeddedCoverPath);
       }
 
-      const [stats, extractedMetadata] = await Promise.all([
+      const [stats, extracted] = await Promise.all([
         stat(tempFilePath),
-        AudioService.extractMetadata(tempFilePath),
+        extractAudioMetadata(tempFilePath, {
+          includeCover: !trackInfo?.albumCoverUrl,
+        }),
       ]);
+      const extractedMetadata = extracted?.metadata ?? null;
 
       let finalMetadata: AudioModel.audioMetadata | undefined;
       if (extractedMetadata) {
@@ -453,7 +461,10 @@ export class TidalProvider extends BaseAudioProvider {
         ? await this.downloadCoverFromUrl(trackInfo.albumCoverUrl, id)
         : null;
       if (!extractedImage) {
-        extractedImage = await AudioService.extractAlbumArt(tempFilePath, id);
+        extractedImage = await extractAndStoreCoverArt(
+          tempFilePath,
+          extracted?.pictures,
+        );
       }
 
       const storageFilename = `${id}${ext}`;
@@ -472,6 +483,7 @@ export class TidalProvider extends BaseAudioProvider {
           undefined,
           trackIdStr,
           resolvedIsrc,
+          serializeExtraMetadata(extracted?.extra),
         ),
       );
       await this.ensureUserLibraryEntry({

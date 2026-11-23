@@ -27,6 +27,7 @@ export namespace AudioModel {
           t.Literal("size"),
           t.Literal("uploadedAt"),
           t.Literal("title"),
+          t.Literal("album"),
         ],
         { default: "uploadedAt" },
       ),
@@ -62,10 +63,25 @@ export namespace AudioModel {
   });
   export type randomQuery = typeof randomQuery.static;
 
+  export const replayGain = t.Object({
+    trackGain: t.Optional(t.Number()),
+    trackPeak: t.Optional(t.Number()),
+    albumGain: t.Optional(t.Number()),
+    albumPeak: t.Optional(t.Number()),
+  });
+  export type replayGain = typeof replayGain.static;
+
   export const audioMetadata = t.Object({
     title: t.Optional(t.String()),
     artist: t.Optional(t.String()),
+    albumArtist: t.Optional(t.String()),
+    artists: t.Optional(t.Array(t.String())),
     album: t.Optional(t.String()),
+    trackNumber: t.Optional(t.Number()),
+    totalTracks: t.Optional(t.Number()),
+    discNumber: t.Optional(t.Number()),
+    totalDiscs: t.Optional(t.Number()),
+    compilation: t.Optional(t.Boolean()),
     isrc: t.Optional(t.String()),
     year: t.Optional(t.Number()),
     genre: t.Optional(t.Array(t.String())),
@@ -75,6 +91,10 @@ export namespace AudioModel {
     bitDepth: t.Optional(t.Number()),
     channels: t.Optional(t.Number()),
     format: t.Optional(t.String()),
+    codec: t.Optional(t.String()),
+    lossless: t.Optional(t.Boolean()),
+    replayGain: t.Optional(replayGain),
+    lyrics: t.Optional(t.String()),
   });
   export type audioMetadata = typeof audioMetadata.static;
 

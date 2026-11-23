@@ -1,9 +1,11 @@
 import { existsSync, unlinkSync, renameSync } from "fs";
 import { join, extname } from "path";
-import jimp from "jimp";
-import { TEMP_DIR, getWebPImageFileName} from "../../../utils/helpers";
+import { TEMP_DIR } from "../../../utils/helpers";
+import {
+  processAndStoreCoverArt,
+  processCoverForEmbedding,
+} from "../../../utils/coverArt";
 import { logger } from "../../../utils/logger";
-import { Storage } from "../../../utils/storage";
 import {
   PlaylistRepository,
   AudioFileUserRepository,
@@ -266,17 +268,8 @@ export abstract class BaseAudioProvider {
       });
       if (!resp.ok) return null;
 
-      const image = await jimp.read(Buffer.from(await resp.arrayBuffer()));
-      const w = image.getWidth();
-      const h = image.getHeight();
-      const s = Math.min(w, h);
-
-      await image
-        .crop(Math.floor((w - s) / 2), Math.floor((h - s) / 2), s, s)
-        .quality(100)
-        .writeAsync(tempCoverPath);
-
-      return tempCoverPath;
+      const rawBytes = new Uint8Array(await resp.arrayBuffer());
+      return await processCoverForEmbedding(rawBytes, tempCoverPath);
     } catch (error) {
       logger.error("Cover art download for embedding failed", error, {
         context: "AUDIO_PROVIDER",
@@ -292,37 +285,20 @@ export abstract class BaseAudioProvider {
 
   protected async downloadCoverFromUrl(
     coverUrl: string,
-    audioId: string,
+    _audioId?: string,
   ): Promise<string | null> {
-    const webpImageFileName = getWebPImageFileName(audioId);
-    const tempImagePath = join(TEMP_DIR, webpImageFileName);
     try {
       const resp = await fetch(coverUrl, {
         signal: AbortSignal.timeout(15_000),
       });
       if (!resp.ok) return null;
-      const image = await jimp.read(Buffer.from(await resp.arrayBuffer()));
-      const w = image.getWidth();
-      const h = image.getHeight();
-      const s = Math.min(w, h);
-      await image
-        .crop(Math.floor((w - s) / 2), Math.floor((h - s) / 2), s, s)
-        .quality(100)
-        .writeAsync(tempImagePath);
-      const imageData = await Bun.file(tempImagePath).arrayBuffer();
-      await Storage.upload(
-        webpImageFileName,
-        new Uint8Array(imageData),
-        "image/webp",
-      );
-      return webpImageFileName;
+      const rawBytes = new Uint8Array(await resp.arrayBuffer());
+      return await processAndStoreCoverArt(rawBytes);
     } catch (error) {
       logger.error("Cover art download from URL failed", error, {
         context: "AUDIO_PROVIDER",
       });
       return null;
-    } finally {
-      if (existsSync(tempImagePath)) unlinkSync(tempImagePath);
     }
   }
 }

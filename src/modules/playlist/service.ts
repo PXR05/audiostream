@@ -238,7 +238,7 @@ export abstract class PlaylistService {
         );
       }
 
-      if (playlist.coverImage) {
+      if (playlist.coverImage && playlist.coverImage.startsWith("playlist_")) {
         try {
           await Storage.delete(playlist.coverImage);
         } catch {

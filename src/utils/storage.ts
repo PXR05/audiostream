@@ -440,6 +440,22 @@ export abstract class Storage {
     }
   }
 
+  private static isS3NotFoundError(error: unknown): boolean {
+    if (!error || typeof error !== "object") return false;
+    const err = error as {
+      name?: string;
+      Code?: string;
+      $metadata?: { httpStatusCode?: number };
+    };
+    return (
+      err.name === "NotFound" ||
+      err.name === "NoSuchKey" ||
+      err.Code === "NotFound" ||
+      err.Code === "NoSuchKey" ||
+      err.$metadata?.httpStatusCode === 404
+    );
+  }
+
   static async exists(key: string): Promise<boolean> {
     if (!this.s3Available && this.localStorageEnabled) {
       return await this.existsLocal(key);
@@ -454,6 +470,9 @@ export abstract class Storage {
       );
       return true;
     } catch (error) {
+      if (this.isS3NotFoundError(error)) {
+        return false;
+      }
       const shouldUseLocalStorage = await this.handleS3ErrorWithLocalStorage(
         "exists",
         key,
@@ -485,6 +504,9 @@ export abstract class Storage {
         contentType: response.ContentType || "application/octet-stream",
       };
     } catch (error) {
+      if (this.isS3NotFoundError(error)) {
+        return null;
+      }
       const shouldUseLocalStorage = await this.handleS3ErrorWithLocalStorage(
         "getMetadata",
         key,

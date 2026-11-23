@@ -13,6 +13,11 @@ import { AudioModel } from "../model";
 import { NO_ISRC_SENTINEL, normalizeIsrc } from "../../../utils/isrc";
 import { getIsrcFromDeezerSearch } from "../../../utils/deezer";
 import { getIsrcFromMusicBrainzSearch } from "../../../utils/musicbrainz";
+import {
+  extractAndStoreCoverArt,
+  extractAudioMetadata,
+  serializeExtraMetadata,
+} from "../../../utils/metadata";
 
 export class YoutubeProvider extends BaseAudioProvider {
   readonly name = "youtube";
@@ -141,14 +146,14 @@ export class YoutubeProvider extends BaseAudioProvider {
       "--embed-thumbnail",
       "--parse-metadata",
       "%(artist,uploader,channel,creator)s:%(meta_artist)s",
+      "--replace-in-metadata",
+      "meta_artist",
+      ",\\s*",
+      "; ",
       "--parse-metadata",
       "%(meta_artist)s:%(album_artist)s",
       "--parse-metadata",
       "%(meta_artist)s:%(artist)s",
-      "--replace-in-metadata",
-      "artist",
-      "^([^,&]+).*",
-      "\\1",
     ];
   }
 
@@ -171,6 +176,15 @@ export class YoutubeProvider extends BaseAudioProvider {
     return null;
   }
 
+  private extractPrimaryArtistForSearch(
+    metadata: AudioModel.audioMetadata | null,
+  ): string | undefined {
+    const candidate = metadata?.artists?.[0] ?? metadata?.artist;
+    if (!candidate) return undefined;
+    const primary = candidate.split(/\s*(?:,|&)\s*/)[0]?.trim();
+    return primary || candidate;
+  }
+
   private async resolveYoutubeIsrc(
     metadata: AudioModel.audioMetadata | null,
     signal?: AbortSignal,
@@ -180,9 +194,11 @@ export class YoutubeProvider extends BaseAudioProvider {
       return metadataIsrc;
     }
 
+    const searchArtist = this.extractPrimaryArtistForSearch(metadata);
+
     const deezerIsrc = await getIsrcFromDeezerSearch({
       title: metadata?.title,
-      artist: metadata?.artist,
+      artist: searchArtist,
       signal,
     });
     if (deezerIsrc) {
@@ -191,7 +207,7 @@ export class YoutubeProvider extends BaseAudioProvider {
 
     const musicbrainzIsrc = await getIsrcFromMusicBrainzSearch({
       title: metadata?.title,
-      artist: metadata?.artist,
+      artist: searchArtist,
       signal,
     });
     if (musicbrainzIsrc) {
@@ -361,15 +377,15 @@ export class YoutubeProvider extends BaseAudioProvider {
       }
 
       sendEvent({ type: "info", message: "Processing file..." });
-      const stats = await stat(tempFilePath);
-      const [extractedMetadata, extractedImage] = await Promise.all([
-        AudioService.extractMetadata(tempFilePath),
-        AudioService.extractAlbumArt(tempFilePath, id),
+      const [stats, extracted] = await Promise.all([
+        stat(tempFilePath),
+        extractAudioMetadata(tempFilePath, { includeCover: true }),
       ]);
-      const resolvedIsrc = await this.resolveYoutubeIsrc(
-        extractedMetadata,
-        signal,
-      );
+      const extractedMetadata = extracted?.metadata ?? null;
+      const [extractedImage, resolvedIsrc] = await Promise.all([
+        extractAndStoreCoverArt(tempFilePath, extracted?.pictures),
+        this.resolveYoutubeIsrc(extractedMetadata, signal),
+      ]);
 
       await Storage.uploadFromFile(
         filename,
@@ -388,6 +404,7 @@ export class YoutubeProvider extends BaseAudioProvider {
           videoId || undefined,
           undefined,
           resolvedIsrc,
+          serializeExtraMetadata(extracted?.extra),
         ),
       );
       await this.ensureUserLibraryEntry({
