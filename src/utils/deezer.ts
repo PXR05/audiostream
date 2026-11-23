@@ -1,129 +1,182 @@
-import { normalizeIsrc, cleanQueryTerm } from "./isrc";
+import {
+  cleanQueryTerm,
+  normalizeForMatching,
+  normalizeIsrc,
+  parseTrackSearchTerms,
+  scoreIsrcCandidate,
+  stripAllParentheticals,
+} from "./isrc";
 
 const DEEZER_API_URL = "https://api.deezer.com/search";
 const DEEZER_API_TIMEOUT_MS = 10_000;
-const DEEZER_SEARCH_LIMIT = 10;
+const DEEZER_SEARCH_LIMIT = 15;
+const DEEZER_HIGH_CONFIDENCE_SCORE = 85;
 
 interface DeezerSearchArtist {
   name?: string;
 }
 
+interface DeezerSearchAlbum {
+  title?: string;
+}
+
 interface DeezerSearchTrack {
   title?: string;
   title_short?: string;
+  duration?: number;
   artist?: DeezerSearchArtist;
+  album?: DeezerSearchAlbum;
   isrc?: string;
 }
 
 interface DeezerSearchResponse {
   data?: DeezerSearchTrack[];
+  error?: {
+    type?: string;
+    message?: string;
+    code?: number;
+  };
 }
 
-function normalizeText(value: string | null | undefined): string {
-  return (value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+function escapeDeezerQuote(value: string): string {
+  return value.replace(/"/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function tokenOverlapScore(a: string, b: string): number {
-  if (!a || !b) return 0;
+async function fetchDeezerTracks(
+  query: string,
+  signal?: AbortSignal,
+): Promise<DeezerSearchTrack[] | null> {
+  const url = `${DEEZER_API_URL}?q=${encodeURIComponent(query)}&limit=${DEEZER_SEARCH_LIMIT}`;
 
-  const aTokens = new Set(a.split(" ").filter(Boolean));
-  const bTokens = new Set(b.split(" ").filter(Boolean));
-  if (aTokens.size === 0 || bTokens.size === 0) return 0;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (signal?.aborted) return null;
+    try {
+      const fetchSignal = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(DEEZER_API_TIMEOUT_MS)])
+        : AbortSignal.timeout(DEEZER_API_TIMEOUT_MS);
 
-  let overlap = 0;
-  for (const token of aTokens) {
-    if (bTokens.has(token)) overlap += 1;
-  }
+      const resp = await fetch(url, { signal: fetchSignal });
+      if (resp.status === 429 && attempt === 0) {
+        await new Promise((r) => setTimeout(r, 1_500));
+        continue;
+      }
+      if (!resp.ok) return null;
 
-  return overlap;
-}
-
-function scoreTrackCandidate(
-  track: DeezerSearchTrack,
-  titleNorm: string,
-  artistNorm: string,
-): number {
-  const trackTitleNorm = normalizeText(track.title || track.title_short);
-  const trackArtistNorm = normalizeText(track.artist?.name);
-
-  let score = 0;
-
-  if (trackTitleNorm === titleNorm) {
-    score += 60;
-  } else if (
-    trackTitleNorm.includes(titleNorm) ||
-    titleNorm.includes(trackTitleNorm)
-  ) {
-    score += 30;
-  } else {
-    score += tokenOverlapScore(trackTitleNorm, titleNorm) * 5;
-  }
-
-  if (artistNorm) {
-    if (trackArtistNorm === artistNorm) {
-      score += 40;
-    } else if (
-      trackArtistNorm.includes(artistNorm) ||
-      artistNorm.includes(trackArtistNorm)
-    ) {
-      score += 20;
-    } else {
-      score += tokenOverlapScore(trackArtistNorm, artistNorm) * 4;
+      const body = (await resp.json()) as DeezerSearchResponse;
+      if (body.error?.code === 4 && attempt === 0) {
+        // Deezer quota limit exceeded — brief backoff and retry once
+        await new Promise((r) => setTimeout(r, 1_500));
+        continue;
+      }
+      return body.data ?? [];
+    } catch {
+      return null;
     }
   }
-
-  return score;
+  return null;
 }
 
 export async function getIsrcFromDeezerSearch(input: {
   title?: string | null;
   artist?: string | null;
+  artists?: string[] | null;
+  album?: string | null;
+  duration?: number | null;
   signal?: AbortSignal;
 }): Promise<string | null> {
-  const title = cleanQueryTerm(input.title);
-  if (!title) return null;
+  const parsed = parseTrackSearchTerms({
+    title: input.title,
+    artist: input.artist,
+    artists: input.artists,
+  });
+  if (!parsed) return null;
 
-  const artist = cleanQueryTerm(input.artist);
-  const query = `${title} ${artist}`.trim();
-  const titleNorm = normalizeText(title);
-  const artistNorm = normalizeText(artist);
+  const targetAlbumNorm = normalizeForMatching(cleanQueryTerm(input.album));
+  const queryAttempts: Array<{
+    query: string;
+    titleNorm: string;
+    artistNorm: string;
+  }> = [];
 
-  const url = `${DEEZER_API_URL}?q=${encodeURIComponent(query)}&limit=${DEEZER_SEARCH_LIMIT}`;
-
-  try {
-    const resp = await fetch(url, {
-      signal: input.signal ?? AbortSignal.timeout(DEEZER_API_TIMEOUT_MS),
+  const seenQueries = new Set<string>();
+  const addAttempt = (q: string, t: string, a: string) => {
+    const trimmed = q.trim();
+    if (!trimmed || seenQueries.has(trimmed)) return;
+    seenQueries.add(trimmed);
+    queryAttempts.push({
+      query: trimmed,
+      titleNorm: normalizeForMatching(t),
+      artistNorm: normalizeForMatching(a),
     });
-    if (!resp.ok) return null;
+  };
 
-    const body: DeezerSearchResponse = await resp.json();
-    const tracks = body.data ?? [];
+  if (parsed.artist) {
+    addAttempt(
+      `artist:"${escapeDeezerQuote(parsed.artist)}" track:"${escapeDeezerQuote(parsed.title)}"`,
+      parsed.title,
+      parsed.artist,
+    );
+  }
+  addAttempt(`${parsed.title} ${parsed.artist}`, parsed.title, parsed.artist);
 
-    let bestScore = -1;
-    let bestIsrc: string | null = null;
+  if (parsed.altTitle && parsed.altArtist) {
+    addAttempt(
+      `artist:"${escapeDeezerQuote(parsed.altArtist)}" track:"${escapeDeezerQuote(parsed.altTitle)}"`,
+      parsed.altTitle,
+      parsed.altArtist,
+    );
+    addAttempt(
+      `${parsed.altTitle} ${parsed.altArtist}`,
+      parsed.altTitle,
+      parsed.altArtist,
+    );
+  }
+
+  const strippedTitle = stripAllParentheticals(parsed.title);
+  if (strippedTitle && strippedTitle !== parsed.title) {
+    addAttempt(
+      `${strippedTitle} ${parsed.artist}`,
+      strippedTitle,
+      parsed.artist,
+    );
+  }
+
+  let bestScore = -1;
+  let bestIsrc: string | null = null;
+
+  for (const attempt of queryAttempts) {
+    if (input.signal?.aborted) return null;
+    const tracks = await fetchDeezerTracks(attempt.query, input.signal);
+    if (!tracks || tracks.length === 0) continue;
 
     for (const track of tracks) {
       const isrc = normalizeIsrc(track.isrc);
       if (!isrc) continue;
 
-      const score = scoreTrackCandidate(track, titleNorm, artistNorm);
+      const score = scoreIsrcCandidate({
+        candidateTitle: track.title || track.title_short,
+        candidateArtists: [track.artist?.name],
+        candidateAlbum: track.album?.title,
+        candidateDurationSec: track.duration,
+        targetTitleNorm: attempt.titleNorm,
+        targetArtistNorm: attempt.artistNorm,
+        targetAlbumNorm,
+        targetDurationSec: input.duration,
+      });
+
       if (score > bestScore) {
         bestScore = score;
         bestIsrc = isrc;
       }
     }
 
-    const threshold = artistNorm ? 20 : 15;
-    if (bestScore < threshold) return null;
-
-    return bestIsrc;
-  } catch (error) {
-    if ((error as Error).name === "AbortError") {
-      return null;
+    if (bestScore >= DEEZER_HIGH_CONFIDENCE_SCORE) {
+      break;
     }
-    return null;
   }
+
+  const threshold = parsed.artist ? 48 : 42;
+  if (bestScore < threshold) return null;
+
+  return bestIsrc;
 }

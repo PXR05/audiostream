@@ -152,7 +152,10 @@ export class YoutubeProvider extends BaseAudioProvider {
 
     const deezerIsrc = await getIsrcFromDeezerSearch({
       title: metadata?.title,
-      artist: searchArtist,
+      artist: searchArtist ?? metadata?.artist,
+      artists: metadata?.artists,
+      album: metadata?.album,
+      duration: metadata?.duration,
       signal,
     });
     if (deezerIsrc) {
@@ -161,7 +164,10 @@ export class YoutubeProvider extends BaseAudioProvider {
 
     const musicbrainzIsrc = await getIsrcFromMusicBrainzSearch({
       title: metadata?.title,
-      artist: searchArtist,
+      artist: searchArtist ?? metadata?.artist,
+      artists: metadata?.artists,
+      album: metadata?.album,
+      duration: metadata?.duration,
       signal,
     });
     if (musicbrainzIsrc) {

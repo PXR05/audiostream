@@ -9,6 +9,7 @@ import { Storage } from "./utils/storage";
 import { AuthService } from "./modules/auth/service";
 import migrate from "./scripts/migrate";
 import runMetadataBackfill from "./scripts/metadataBackfill";
+import runIsrcBackfill from "./scripts/isrcBackfill";
 
 process.on("unhandledRejection", (reason) => {
   logger.error(
@@ -73,11 +74,25 @@ if (cluster.isPrimary) {
     logger.info(`Worker ${process.pid} started`);
   }
 
-  runMetadataBackfill({ upgradeCovers: true }).catch((error) => {
-    logger.error("Startup metadata backfill failed", error, {
-      context: "STARTUP",
-    });
-  });
+  void (async () => {
+    try {
+      await runMetadataBackfill({ upgradeCovers: true });
+    } catch (error) {
+      logger.error("Startup metadata backfill failed", error, {
+        context: "STARTUP",
+      });
+    }
+    try {
+      await runIsrcBackfill({
+        retrySentinel:
+          process.env.ISRC_BACKFILL_RETRY_SENTINEL?.toLowerCase() === "true",
+      });
+    } catch (error) {
+      logger.error("Startup ISRC backfill failed", error, {
+        context: "STARTUP",
+      });
+    }
+  })();
 } else {
   await import("./server");
   logger.info(`Worker ${process.pid} started`);
