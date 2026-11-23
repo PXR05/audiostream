@@ -5,6 +5,7 @@ import type { AuthModel } from "./model";
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const SESSION_ACTIVITY_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
 
 async function hashPassword(password: string): Promise<string> {
   return await argon2id({
@@ -43,7 +44,24 @@ export async function validateSession(
     return null;
   }
 
-  await SessionRepository.updateActivity(sessionId);
+  const lastActivityMs =
+    session.lastActivityAt instanceof Date
+      ? session.lastActivityAt.getTime()
+      : new Date(session.lastActivityAt).getTime();
+
+  if (
+    !Number.isFinite(lastActivityMs) ||
+    Date.now() - lastActivityMs >= SESSION_ACTIVITY_UPDATE_INTERVAL_MS
+  ) {
+    try {
+      await SessionRepository.updateActivity(sessionId);
+    } catch (error) {
+      logger.warn(
+        `Failed to refresh session activity for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+        { context: "AUTH" },
+      );
+    }
+  }
 
   return {
     userId: user.id,

@@ -350,6 +350,25 @@ export const logger = {
         console.error(errorDetails);
         await writeToLogFile(errorDetails);
 
+        let cause: unknown = (error as { cause?: unknown }).cause;
+        let depth = 0;
+        while (cause && depth < 5) {
+          const causeText =
+            cause instanceof Error
+              ? `${cause.name}: ${cause.message}`
+              : typeof cause === "object"
+                ? JSON.stringify(cause)
+                : String(cause);
+          const causeLine = `  └─ Cause: ${causeText}`;
+          console.error(causeLine);
+          await writeToLogFile(causeLine);
+          cause =
+            cause instanceof Error
+              ? (cause as { cause?: unknown }).cause
+              : undefined;
+          depth++;
+        }
+
         if (error.stack) {
           const stackTrace = `  └─ Stack: ${error.stack}`;
           console.error(stackTrace);
