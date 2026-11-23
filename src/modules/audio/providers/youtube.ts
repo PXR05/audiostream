@@ -74,13 +74,28 @@ export class YoutubeProvider extends BaseAudioProvider {
         sendEvent({ type: "cancelled", message: "Download was cancelled" });
         return;
       }
-      sendEvent({ type: "info", message: "Checking dependencies..." });
-      const check = Bun.spawn(["yt-dlp", "--version"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      if ((await check.exited) !== 0)
-        throw new Error("yt-dlp is not installed or not accessible");
+      sendEvent({ type: "info", message: "Checking yt-dlp service..." });
+      const serviceUrl = this.getYtDlpServiceUrl();
+      const healthSignal = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(5_000)])
+        : AbortSignal.timeout(5_000);
+      let healthResp: Response;
+      try {
+        healthResp = await fetch(`${serviceUrl}/health`, {
+          signal: healthSignal,
+        });
+      } catch {
+        if (signal?.aborted) {
+          sendEvent({ type: "cancelled", message: "Download was cancelled" });
+          return;
+        }
+        throw new Error(`yt-dlp service is not reachable at ${serviceUrl}`);
+      }
+      if (!healthResp.ok) {
+        throw new Error(
+          `yt-dlp service is not healthy (HTTP ${healthResp.status})`,
+        );
+      }
       if (signal?.aborted) {
         sendEvent({ type: "cancelled", message: "Download was cancelled" });
         return;
@@ -109,71 +124,10 @@ export class YoutubeProvider extends BaseAudioProvider {
     }
   }
 
-  private ytDlpBaseArgs(cookies: boolean): string[] {
-    const usePot =
-      process.env.YOUTUBE_USE_POT?.toLowerCase() === "true";
-    const potUrl =
-      process.env.YOUTUBE_POT_URL || (usePot ? "http://localhost:4416" : undefined);
-    const client =
-      process.env.YOUTUBE_CLIENT ||
-      (usePot ? "default,mweb" : "tv_simply,android_vr");
-
-    const extractorArgs: string[] = [];
-
-    if (usePot && potUrl) {
-      extractorArgs.push(
-        "--extractor-args",
-        `youtubepot-bgutilhttp:base_url=${potUrl}`,
-      );
-    }
-
-    if (client && client !== "none" && client !== "false") {
-      extractorArgs.push(
-        "--extractor-args",
-        `youtube:player_client=${client}`,
-      );
-    }
-
-    return [
-      ...(cookies ? ["--cookies", "cookies.txt"] : []),
-      ...extractorArgs,
-      "-f",
-      "bestaudio",
-      "-x",
-      "--audio-format",
-      "opus",
-      "--embed-metadata",
-      "--embed-thumbnail",
-      "--parse-metadata",
-      "%(artist,uploader,channel,creator)s:%(meta_artist)s",
-      "--replace-in-metadata",
-      "meta_artist",
-      ",\\s*",
-      "; ",
-      "--parse-metadata",
-      "%(meta_artist)s:%(album_artist)s",
-      "--parse-metadata",
-      "%(meta_artist)s:%(artist)s",
-    ];
-  }
-
-  private parseYtDlpProgress(
-    line: string,
-  ): AudioModel.youtubeProgressEvent["data"] | null {
-    const full = line.match(
-      /\[download\]\s+(\d+\.?\d*)%\s+of\s+~?(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)/,
-    );
-    if (full) {
-      return {
-        percent: parseFloat(full[1]),
-        totalSize: full[2],
-        speed: full[3],
-        eta: full[4],
-      };
-    }
-    const simple = line.match(/\[download\]\s+(\d+\.?\d*)%/);
-    if (simple) return { percent: parseFloat(simple[1]) };
-    return null;
+  private getYtDlpServiceUrl(): string {
+    return (
+      process.env.YTDLP_SERVICE_URL?.trim() || "http://localhost:8080"
+    ).replace(/\/+$/, "");
   }
 
   private extractPrimaryArtistForSearch(
@@ -307,60 +261,69 @@ export class YoutubeProvider extends BaseAudioProvider {
       sendEvent = broadcast;
     }
 
+    const serviceUrl = this.getYtDlpServiceUrl();
+    let remoteFileId: string | null = null;
+
     try {
-      const proc = Bun.spawn(
-        [
-          "yt-dlp",
-          ...this.ytDlpBaseArgs(this.hasCookies()),
-          "--newline",
-          "--no-playlist",
-          "-o",
-          tempFilePath,
-          url,
-        ],
-        { stdout: "pipe", stderr: "pipe" },
-      );
+      const downloadResp = await fetch(`${serviceUrl}/download`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+        signal,
+      });
 
-      const abortHandler = () => {
-        try {
-          proc.kill();
-        } catch {}
-      };
-      signal?.addEventListener("abort", abortHandler, { once: true });
+      if (!downloadResp.ok || !downloadResp.body) {
+        const errText = await downloadResp.text().catch(() => "");
+        throw new Error(
+          `yt-dlp service error (HTTP ${downloadResp.status}): ${errText.substring(0, 300)}`,
+        );
+      }
 
-      const reader = proc.stdout.getReader();
+      const reader = downloadResp.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let streamError: string | null = null;
 
-      try {
-        while (true) {
-          if (signal?.aborted) {
-            reader.cancel();
-            break;
-          }
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-          for (const line of lines) {
-            if (line.includes("[download]")) {
-              const data = this.parseYtDlpProgress(line);
-              if (data)
-                sendEvent({
-                  type: "progress",
-                  message: `Downloading: ${data.percent?.toFixed(1)}%`,
-                  data,
-                });
-            } else if (line.includes("[ExtractAudio]")) {
-              sendEvent({ type: "info", message: "Converting audio..." });
-            } else if (line.includes("[EmbedThumbnail]")) {
-              sendEvent({ type: "info", message: "Embedding thumbnail..." });
-            }
-          }
+      const handleEventLine = (rawLine: string) => {
+        const trimmed = rawLine.trim();
+        if (!trimmed) return;
+        let evt: any;
+        try {
+          evt = JSON.parse(trimmed);
+        } catch {
+          return;
         }
-      } finally {
-        signal?.removeEventListener("abort", abortHandler);
+        if (evt.type === "progress" && evt.data) {
+          sendEvent({
+            type: "progress",
+            message: `Downloading: ${evt.data.percent?.toFixed(1)}%`,
+            data: evt.data,
+          });
+        } else if (evt.type === "stage" && evt.message) {
+          sendEvent({ type: "info", message: evt.message });
+        } else if (evt.type === "done" && evt.fileId) {
+          remoteFileId = evt.fileId;
+        } else if (evt.type === "error") {
+          streamError = evt.message || "yt-dlp failed";
+        }
+      };
+
+      while (true) {
+        if (signal?.aborted) {
+          await reader.cancel().catch(() => {});
+          break;
+        }
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          handleEventLine(line);
+        }
+      }
+      if (buffer.trim()) {
+        handleEventLine(buffer);
       }
 
       if (signal?.aborted) {
@@ -368,12 +331,31 @@ export class YoutubeProvider extends BaseAudioProvider {
         throw new Error("Download was cancelled");
       }
 
-      if ((await proc.exited) !== 0) {
-        const stderr = await new Response(proc.stderr).text();
-        logger.error("yt-dlp failed", new Error(stderr), {
+      if (streamError) {
+        logger.error("yt-dlp failed", new Error(streamError), {
           context: "YOUTUBE_PROVIDER",
         });
-        throw new Error(`Download failed: ${stderr.substring(0, Math.min(500, stderr.length))}`);
+        throw new Error(`Download failed: ${streamError}`);
+      }
+
+      if (!remoteFileId) {
+        throw new Error("yt-dlp service did not return a downloaded file");
+      }
+
+      sendEvent({ type: "info", message: "Fetching downloaded file..." });
+      const fileResp = await fetch(`${serviceUrl}/files/${remoteFileId}`, {
+        signal,
+      });
+      if (!fileResp.ok) {
+        throw new Error(
+          `Failed to fetch downloaded file from yt-dlp service (HTTP ${fileResp.status})`,
+        );
+      }
+      await Bun.write(tempFilePath, fileResp);
+
+      if (signal?.aborted) {
+        if (existsSync(tempFilePath)) unlinkSync(tempFilePath);
+        throw new Error("Download was cancelled");
       }
 
       sendEvent({ type: "info", message: "Processing file..." });
@@ -427,9 +409,19 @@ export class YoutubeProvider extends BaseAudioProvider {
         sendEvent({ type: "complete", message: "Download complete!", result });
       return result;
     } catch (error) {
+      if (existsSync(tempFilePath)) {
+        try {
+          unlinkSync(tempFilePath);
+        } catch {}
+      }
       rejectInFlight(error instanceof Error ? error : new Error(String(error)));
       throw error;
     } finally {
+      if (remoteFileId) {
+        fetch(`${serviceUrl}/files/${remoteFileId}`, {
+          method: "DELETE",
+        }).catch(() => {});
+      }
       if (videoId) BaseAudioProvider.inFlightDownloads.delete(videoId);
     }
   }
@@ -441,35 +433,32 @@ export class YoutubeProvider extends BaseAudioProvider {
     signal?: AbortSignal,
   ): Promise<void> {
     sendEvent({ type: "info", message: "Playlist detected, fetching info..." });
-    const cookies = this.hasCookies();
+    const serviceUrl = this.getYtDlpServiceUrl();
 
-    const infoProc = Bun.spawn(
-      [
-        "yt-dlp",
-        ...(cookies ? ["--cookies", "cookies.txt"] : []),
-        "--user-agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-        "--ignore-errors",
-        "--dump-json",
-        "--flat-playlist",
-        url,
-      ],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-
-    const abortHandler = () => {
-      try {
-        infoProc.kill();
-      } catch {}
-    };
-    signal?.addEventListener("abort", abortHandler, { once: true });
-    const infoExitCode = await infoProc.exited;
-    signal?.removeEventListener("abort", abortHandler);
+    const infoResp = await fetch(`${serviceUrl}/playlist-info`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+      signal,
+    });
 
     if (signal?.aborted) throw new Error("Download was cancelled");
 
-    const stdout = await new Response(infoProc.stdout).text();
-    const stderr = await new Response(infoProc.stderr).text();
+    if (!infoResp.ok) {
+      const errText = await infoResp.text().catch(() => "");
+      throw new Error(
+        `Failed to fetch playlist info (HTTP ${infoResp.status}): ${errText.substring(0, 200)}`,
+      );
+    }
+
+    const infoData = (await infoResp.json()) as {
+      entries?: any[];
+      stderr?: string;
+      exitCode?: number;
+    };
+
+    const infoExitCode = infoData.exitCode ?? 0;
+    const stderr = infoData.stderr ?? "";
 
     if (infoExitCode !== 0 && stderr.trim()) {
       logger.warn(`yt-dlp playlist info stderr: ${stderr.substring(0, 300)}`, {
@@ -477,20 +466,7 @@ export class YoutubeProvider extends BaseAudioProvider {
       });
     }
 
-    const videos = stdout
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0)
-      .flatMap((line) => {
-        try {
-          return [JSON.parse(line)];
-        } catch {
-          logger.warn(`Skipping non-JSON line: ${line.substring(0, 120)}`, {
-            context: "YOUTUBE_PROVIDER",
-          });
-          return [];
-        }
-      });
+    const videos = Array.isArray(infoData.entries) ? infoData.entries : [];
 
     if (videos.length === 0) {
       if (infoExitCode !== 0 && stderr.trim()) {

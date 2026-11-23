@@ -18,6 +18,7 @@ If you only want to deploy and run the service.
 
    ```bash
    wget https://raw.githubusercontent.com/PXR05/audiostream/main/compose.yaml
+   wget https://raw.githubusercontent.com/PXR05/audiostream/main/ytdlp-server.ts
    wget https://raw.githubusercontent.com/PXR05/audiostream/main/.env.example -O .env
    ```
 
@@ -86,7 +87,7 @@ The API listens on `http://localhost:3000` by default.
 
 - `compose.yaml`: production-style deploy using `ghcr.io/pxr05/audiostream:latest`
 - `compose.local.yaml`: build image from local source
-- `compose.dev.yaml`: Postgres-only for local development
+- `compose.dev.yaml`: Postgres and `ytdlp` service for local development
 
 ## Project structure
 
@@ -103,6 +104,6 @@ The API listens on `http://localhost:3000` by default.
   mkdir -p models
   wget https://essentia.upf.edu/models/feature-extractors/discogs-effnet/discogs-effnet-bsdynamic-1.onnx -O models/effnet.onnx
   ```
-- **YouTube (`/audio/search/youtube`, `/audio/upload/youtube`)**: Search uses `ytmusic-api` by default or `YOUTUBE_API_KEY` if set. Downloads require `yt-dlp`, `ffmpeg`, and `deno` (pre-installed in Docker). To bypass bot/age checks, mount `./cookies.txt` and/or enable the `pot-provider` container (`YOUTUBE_USE_POT=true`, `YOUTUBE_POT_URL=http://pot-provider:4416`).
+- **YouTube (`/audio/search/youtube`, `/audio/upload/youtube`)**: Search uses `ytmusic-api` by default or `YOUTUBE_API_KEY` if set. Downloads and playlist extraction are handled by the external `ghcr.io/jim60105/yt-dlp:pot` container (which bundles `yt-dlp`, `ffmpeg`, `deno`, and `bgutil-pot` — no separate POT container required), bridged via `ytdlp-server.ts` (`YTDLP_SERVICE_URL=http://ytdlp:8080` in Docker, `http://localhost:8080` in local dev). To bypass age/account checks, mount `./cookies.txt` on the `ytdlp` container.
 - **Tidal (`/audio/search/tidal`, `/audio/upload/tidal`)**: Uses built-in community proxies by default (override via `TIDAL_PROXY_LIST_URL`). Local non-Docker runs require `ffmpeg` and `python3-mutagen` for FLAC tagging.
 - **Object Storage**: Uses local `./uploads` by default. Set `S3_ENDPOINT`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY`, and `S3_SECRET_KEY` in `.env` (and uncomment `s3` in `compose.yaml` if using RustFS) to use S3 storage.

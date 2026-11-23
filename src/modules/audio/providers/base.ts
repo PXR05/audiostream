@@ -35,14 +35,6 @@ export abstract class BaseAudioProvider {
   abstract search(query: string): Promise<any[]>;
   abstract download(options: DownloadOptions): Promise<void>;
 
-  protected hasCookies(): boolean {
-    try {
-      return existsSync("cookies.txt");
-    } catch {
-      return false;
-    }
-  }
-
   protected registerInFlight(
     key: string,
     sendEvent: EmitProgress,

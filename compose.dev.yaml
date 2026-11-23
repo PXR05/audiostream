@@ -16,5 +16,41 @@ services:
       timeout: 5s
       retries: 5
 
+  ytdlp:
+    image: ghcr.io/jim60105/yt-dlp:pot
+    restart: unless-stopped
+    entrypoint:
+      [
+        "dumb-init",
+        "--",
+        "deno",
+        "run",
+        "--allow-net",
+        "--allow-run",
+        "--allow-read",
+        "--allow-write",
+        "--allow-env",
+        "/app/server.ts",
+      ]
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      YOUTUBE_CLIENT: ${YOUTUBE_CLIENT:-}
+    volumes:
+      - ./ytdlp-server.ts:/app/server.ts:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "deno",
+          "eval",
+          "const r = await fetch('http://localhost:8080/health'); if (!r.ok) Deno.exit(1);",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
 volumes:
   pg_dev_data:

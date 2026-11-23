@@ -6,3 +6,4 @@ models/
 *.db
 dist/
 logs/
+ytdlp-server.ts

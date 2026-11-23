@@ -17,7 +17,7 @@ import { Storage } from "../utils/storage";
 const CONTEXT = "METADATA_BACKFILL";
 const LEGACY_FORMATS = new Set(["MPEG", "Ogg", "MPEG-4", "WAVE"]);
 
-interface CliOptions {
+export interface MetadataBackfillOptions {
   all: boolean;
   covers: boolean;
   missingCovers: boolean;
@@ -27,16 +27,18 @@ interface CliOptions {
   limit: number | null;
 }
 
-function parseCliArgs(argv: string[]): CliOptions {
-  const opts: CliOptions = {
-    all: false,
-    covers: false,
-    missingCovers: false,
-    upgradeCovers: false,
-    dryRun: false,
-    concurrency: 4,
-    limit: null,
-  };
+const DEFAULT_OPTIONS: MetadataBackfillOptions = {
+  all: false,
+  covers: false,
+  missingCovers: false,
+  upgradeCovers: false,
+  dryRun: false,
+  concurrency: 4,
+  limit: null,
+};
+
+function parseCliArgs(argv: string[]): MetadataBackfillOptions {
+  const opts: MetadataBackfillOptions = { ...DEFAULT_OPTIONS };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -82,14 +84,20 @@ function isLegacyCoverKey(imageFile: string | null): boolean {
   return Boolean(imageFile && !imageFile.startsWith("cover_"));
 }
 
-function needsCoverProcessing(file: AudioFile, opts: CliOptions): boolean {
+function needsCoverProcessing(
+  file: AudioFile,
+  opts: MetadataBackfillOptions,
+): boolean {
   if (opts.covers) return true;
   if (opts.missingCovers && !file.imageFile) return true;
   if (opts.upgradeCovers && isLegacyCoverKey(file.imageFile)) return true;
   return false;
 }
 
-function needsBackfill(file: AudioFile, opts: CliOptions): boolean {
+function needsBackfill(
+  file: AudioFile,
+  opts: MetadataBackfillOptions,
+): boolean {
   if (opts.all) return true;
   if (needsCoverProcessing(file, opts)) return true;
 
@@ -111,7 +119,9 @@ function needsBackfill(file: AudioFile, opts: CliOptions): boolean {
   );
 }
 
-async function snapshotCandidateFiles(opts: CliOptions): Promise<AudioFile[]> {
+async function snapshotCandidateFiles(
+  opts: MetadataBackfillOptions,
+): Promise<AudioFile[]> {
   const allFiles: AudioFile[] = [];
   let page = 1;
   let total = Number.POSITIVE_INFINITY;
@@ -265,8 +275,10 @@ async function runPool<T>(
   await Promise.all(runners);
 }
 
-async function main() {
-  const opts = parseCliArgs(process.argv.slice(2));
+export async function runMetadataBackfill(
+  options: Partial<MetadataBackfillOptions> = {},
+): Promise<void> {
+  const opts: MetadataBackfillOptions = { ...DEFAULT_OPTIONS, ...options };
   await mkdir(TEMP_DIR, { recursive: true });
   await Storage.init();
 
@@ -391,9 +403,11 @@ async function main() {
   );
 }
 
-main().catch((error) => {
-  logger.error("Metadata backfill crashed", error, { context: CONTEXT });
-  process.exit(1);
-});
+if (import.meta.main) {
+  runMetadataBackfill(parseCliArgs(process.argv.slice(2))).catch((error) => {
+    logger.error("Metadata backfill crashed", error, { context: CONTEXT });
+    process.exit(1);
+  });
+}
 
-export default main;
+export default runMetadataBackfill;
