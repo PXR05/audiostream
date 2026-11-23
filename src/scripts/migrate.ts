@@ -17,10 +17,15 @@ async function refreshCollationIfNeeded() {
           actual_version?: string | null;
         }
       | undefined;
-    if (row?.datname && row.datcollversion !== row.actual_version) {
+    if (
+      row?.datname &&
+      row.datcollversion &&
+      row.actual_version &&
+      row.datcollversion !== row.actual_version
+    ) {
       const quotedDb = `"${row.datname.replace(/"/g, '""')}"`;
       logger.info(
-        `Collation version mismatch detected (${row.datcollversion ?? "none"} -> ${row.actual_version ?? "none"}); reindexing database...`,
+        `Collation version mismatch detected (${row.datcollversion} -> ${row.actual_version}); reindexing database...`,
         { context: "DB" },
       );
       await db.execute(sql.raw(`REINDEX DATABASE ${quotedDb}`));
@@ -30,12 +35,28 @@ async function refreshCollationIfNeeded() {
       logger.info("Database collation version refreshed successfully!", {
         context: "DB",
       });
+    } else if (row?.datname && row.datcollversion !== row.actual_version) {
+      logger.debug(
+        `Skipping collation version refresh (${row.datcollversion ?? "none"} -> ${row.actual_version ?? "none"}): PostgreSQL cannot refresh between NULL and non-NULL collation versions`,
+        undefined,
+        { context: "DB" },
+      );
     }
   } catch (error) {
     logger.warn("Could not check/refresh database collation version", {
       context: "DB",
     });
-    logger.debug(String(error), undefined, { context: "DB" });
+    const cause =
+      error instanceof Error
+        ? (error as { cause?: unknown }).cause
+        : undefined;
+    logger.debug(
+      cause instanceof Error
+        ? `${error instanceof Error ? error.message : String(error)} (${cause.message})`
+        : String(error),
+      undefined,
+      { context: "DB" },
+    );
   }
 }
 
