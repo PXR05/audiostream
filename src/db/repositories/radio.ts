@@ -1,4 +1,4 @@
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { db } from "../index";
 import { audioEmbeddings, audioFiles, audioFileUsers } from "../schema";
 import { toPgVectorLiteral } from "../../utils/radio";
@@ -11,6 +11,25 @@ export interface CandidateRow {
   album: string | null;
   duration: number | null;
   vector: Float32Array;
+}
+
+export interface EmbeddingPageRow {
+  audioId: string;
+  updatedAt: Date;
+  vector: Float32Array;
+}
+
+export function parseEmbeddingCursor(raw: string): { updatedAt: Date; audioId: string } | null {
+  const sep = raw.indexOf(":");
+  if (sep <= 0) return null;
+  const msStr = raw.slice(0, sep);
+  const audioId = raw.slice(sep + 1);
+  if (!audioId || !/^\d+$/.test(msStr)) return null;
+  const ms = Number(msStr);
+  if (!Number.isSafeInteger(ms) || ms < 0) return null;
+  const date = new Date(ms);
+  if (Number.isNaN(date.getTime())) return null;
+  return { updatedAt: date, audioId };
 }
 
 function parseVectorFloat32(raw: unknown, dim?: number): Float32Array | null {
@@ -212,5 +231,61 @@ export abstract class RadioRepository {
       .orderBy(sql`${audioEmbeddings.embedding} <=> ${literal}::vector`)
       .limit(limit);
     return rows.map((r) => r.id);
+  }
+
+  static async findEmbeddingsPage(
+    userId: string,
+    modelName: string,
+    analysisVersion: number,
+    nativeDim: number,
+    opts: {
+      limit: number;
+      since?: Date;
+      cursor?: { updatedAt: Date; audioId: string };
+    },
+  ): Promise<{ rows: EmbeddingPageRow[]; hasMore: boolean; nextCursor: string }> {
+    const conditions = [
+      isNull(audioFiles.deletedAt),
+      eq(audioEmbeddings.modelName, modelName),
+      eq(audioEmbeddings.analysisVersion, analysisVersion),
+      userAccessCondition(userId),
+    ];
+
+    if (opts.cursor) {
+      conditions.push(
+        sql`(${audioEmbeddings.updatedAt} > ${opts.cursor.updatedAt} OR (${audioEmbeddings.updatedAt} = ${opts.cursor.updatedAt} AND ${audioEmbeddings.audioId} > ${opts.cursor.audioId}))`,
+      );
+    } else if (opts.since) {
+      conditions.push(sql`${audioEmbeddings.updatedAt} >= ${opts.since}`);
+    }
+
+    const rawRows = await db
+      .select({
+        audioId: audioEmbeddings.audioId,
+        updatedAt: audioEmbeddings.updatedAt,
+        embedding: audioEmbeddings.embedding,
+      })
+      .from(audioEmbeddings)
+      .innerJoin(audioFiles, eq(audioEmbeddings.audioId, audioFiles.id))
+      .where(and(...conditions))
+      .orderBy(asc(audioEmbeddings.updatedAt), asc(audioEmbeddings.audioId))
+      .limit(opts.limit + 1);
+
+    const hasMore = rawRows.length > opts.limit;
+    const sliced = hasMore ? rawRows.slice(0, opts.limit) : rawRows;
+    const rows: EmbeddingPageRow[] = [];
+    for (const r of sliced) {
+      const vector = parseVectorFloat32(r.embedding as unknown, nativeDim);
+      if (!vector || vector.length === 0) continue;
+      rows.push({
+        audioId: r.audioId,
+        updatedAt: r.updatedAt,
+        vector,
+      });
+    }
+
+    const last = sliced[sliced.length - 1];
+    const nextCursor = hasMore && last ? `${last.updatedAt.getTime()}:${last.audioId}` : "";
+    return { rows, hasMore, nextCursor };
   }
 }

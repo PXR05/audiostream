@@ -1,9 +1,10 @@
 import { status } from "elysia";
-import { AudioRepository, RadioRepository } from "../../db/repositories";
+import { AudioRepository, parseEmbeddingCursor, RadioRepository } from "../../db/repositories";
 import { logger } from "../../utils/logger";
 import {
   buildRadioQueue,
   cosineSimilarity,
+  encodeEmbeddingsBinary,
   extractMonoSlice,
   getActiveRadioModel,
   getExtractor,
@@ -234,5 +235,60 @@ export abstract class RadioService {
     const [a, b] = await Promise.all([this.ensureTrackVector(seedId), this.ensureTrackVector(otherId)]);
     if (!a || !b) throw status(404, "Embedding missing for one of the tracks");
     return cosineSimilarity(a, b);
+  }
+
+  static async getEmbeddingsBinary(
+    userId: string,
+    opts: { since?: string; cursor?: string; limit?: number } = {},
+  ): Promise<Uint8Array> {
+    const spec = getActiveRadioModel();
+    const limit = Math.min(Math.max(Math.floor(opts.limit ?? 500), 1), 2000);
+
+    let sinceDate: Date | undefined;
+    const rawSince = opts.since?.trim();
+    if (rawSince) {
+      sinceDate = /^\d+$/.test(rawSince) ? new Date(Number(rawSince)) : new Date(rawSince);
+      if (Number.isNaN(sinceDate.getTime())) {
+        throw status(400, "Invalid since parameter");
+      }
+    }
+
+    let cursor: { updatedAt: Date; audioId: string } | undefined;
+    const rawCursor = opts.cursor?.trim();
+    if (rawCursor) {
+      const parsed = parseEmbeddingCursor(rawCursor);
+      if (!parsed) {
+        throw status(400, "Invalid cursor parameter");
+      }
+      cursor = parsed;
+    }
+
+    const { rows, hasMore, nextCursor } = await RadioRepository.findEmbeddingsPage(
+      userId,
+      spec.name,
+      spec.analysisVersion,
+      spec.dim,
+      { limit, since: sinceDate, cursor },
+    );
+
+    let maxUpdatedAtMs = 0;
+    for (const r of rows) {
+      const ms = r.updatedAt.getTime();
+      if (ms > maxUpdatedAtMs) maxUpdatedAtMs = ms;
+    }
+
+    return encodeEmbeddingsBinary({
+      model: spec.name,
+      analysisVersion: spec.analysisVersion,
+      dim: spec.dim,
+      hasMore,
+      nextCursor,
+      maxUpdatedAtMs,
+      records: rows.map((r) => ({
+        audioId: r.audioId,
+        updatedAtMs: r.updatedAt.getTime(),
+        vector: r.vector,
+      })),
+    });
   }
 }

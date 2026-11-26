@@ -33,4 +33,11 @@ export namespace RadioModel {
     coverage: t.Number(),
   });
   export type radioStatusResponse = typeof radioStatusResponse.static;
+
+  export const embeddingsQuery = t.Object({
+    since: t.Optional(t.String()),
+    cursor: t.Optional(t.String()),
+    limit: t.Optional(t.Number({ minimum: 1, maximum: 2000, default: 500 })),
+  });
+  export type embeddingsQuery = typeof embeddingsQuery.static;
 }

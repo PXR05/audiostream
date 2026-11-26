@@ -776,3 +776,220 @@ export function buildRadioQueue(
   }
   return picked;
 }
+
+export const EMBEDDING_BINARY_MAGIC = [0x41, 0x53, 0x45, 0x4d] as const;
+export const EMBEDDING_BINARY_VERSION = 1;
+export const EMBEDDING_QUANT_INT8 = 1;
+
+export interface BinaryEmbeddingRecord {
+  audioId: string;
+  updatedAtMs: number;
+  vector: Float32Array;
+}
+
+export interface BinaryEmbeddingPage {
+  model: string;
+  analysisVersion: number;
+  dim: number;
+  hasMore: boolean;
+  nextCursor: string;
+  maxUpdatedAtMs: number;
+  records: BinaryEmbeddingRecord[];
+}
+
+export interface DecodedBinaryEmbeddingRecord {
+  audioId: string;
+  updatedAtMs: number;
+  scale: number;
+  data: Int8Array;
+}
+
+export interface DecodedBinaryEmbeddingPage {
+  model: string;
+  analysisVersion: number;
+  dim: number;
+  hasMore: boolean;
+  nextCursor: string;
+  maxUpdatedAtMs: number;
+  records: DecodedBinaryEmbeddingRecord[];
+}
+
+export function quantizeEmbeddingInt8(
+  vec: Float32Array,
+  dim: number = vec.length,
+): { scale: number; data: Int8Array } {
+  const n = Math.min(vec.length, dim);
+  let maxAbs = 0;
+  for (let i = 0; i < n; i++) {
+    const a = Math.abs(vec[i]!);
+    if (a > maxAbs) maxAbs = a;
+  }
+  const data = new Int8Array(dim);
+  if (maxAbs <= 0 || !Number.isFinite(maxAbs)) {
+    return { scale: 0, data };
+  }
+  const scale = maxAbs / 127;
+  for (let i = 0; i < n; i++) {
+    const q = Math.round(vec[i]! / scale);
+    data[i] = q < -127 ? -127 : q > 127 ? 127 : q;
+  }
+  return { scale, data };
+}
+
+export function encodeEmbeddingsBinary(page: BinaryEmbeddingPage): Uint8Array {
+  const encoder = new TextEncoder();
+  const modelBytes = encoder.encode(page.model);
+  const cursorBytes = encoder.encode(page.hasMore ? page.nextCursor : "");
+  const encodedRecords = page.records.map((r) => ({
+    idBytes: encoder.encode(r.audioId),
+    updatedAtMs: r.updatedAtMs,
+    quantized: quantizeEmbeddingInt8(r.vector, page.dim),
+  }));
+
+  let totalSize =
+    4 + // magic
+    1 + // version
+    1 + // quantType
+    2 + // analysisVersion
+    2 + // dim
+    2 + modelBytes.byteLength +
+    1 + // flags
+    2 + cursorBytes.byteLength +
+    8 + // maxUpdatedAtMs
+    4; // recordCount
+
+  for (const r of encodedRecords) {
+    totalSize += 2 + r.idBytes.byteLength + 8 + 4 + page.dim;
+  }
+
+  const out = new Uint8Array(totalSize);
+  const view = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  let offset = 0;
+
+  out[offset++] = EMBEDDING_BINARY_MAGIC[0];
+  out[offset++] = EMBEDDING_BINARY_MAGIC[1];
+  out[offset++] = EMBEDDING_BINARY_MAGIC[2];
+  out[offset++] = EMBEDDING_BINARY_MAGIC[3];
+  view.setUint8(offset, EMBEDDING_BINARY_VERSION);
+  offset += 1;
+  view.setUint8(offset, EMBEDDING_QUANT_INT8);
+  offset += 1;
+  view.setUint16(offset, page.analysisVersion, false);
+  offset += 2;
+  view.setUint16(offset, page.dim, false);
+  offset += 2;
+  view.setUint16(offset, modelBytes.byteLength, false);
+  offset += 2;
+  out.set(modelBytes, offset);
+  offset += modelBytes.byteLength;
+  view.setUint8(offset, page.hasMore ? 1 : 0);
+  offset += 1;
+  view.setUint16(offset, cursorBytes.byteLength, false);
+  offset += 2;
+  out.set(cursorBytes, offset);
+  offset += cursorBytes.byteLength;
+  view.setBigInt64(offset, BigInt(Math.trunc(page.maxUpdatedAtMs)), false);
+  offset += 8;
+  view.setUint32(offset, encodedRecords.length, false);
+  offset += 4;
+
+  for (const r of encodedRecords) {
+    view.setUint16(offset, r.idBytes.byteLength, false);
+    offset += 2;
+    out.set(r.idBytes, offset);
+    offset += r.idBytes.byteLength;
+    view.setBigInt64(offset, BigInt(Math.trunc(r.updatedAtMs)), false);
+    offset += 8;
+    view.setFloat32(offset, r.quantized.scale, false);
+    offset += 4;
+    out.set(new Uint8Array(r.quantized.data.buffer, r.quantized.data.byteOffset, page.dim), offset);
+    offset += page.dim;
+  }
+
+  return out;
+}
+
+export function decodeEmbeddingsBinary(bytes: Uint8Array): DecodedBinaryEmbeddingPage {
+  if (bytes.byteLength < 25) {
+    throw new Error("Binary embeddings payload too short");
+  }
+  if (
+    bytes[0] !== EMBEDDING_BINARY_MAGIC[0] ||
+    bytes[1] !== EMBEDDING_BINARY_MAGIC[1] ||
+    bytes[2] !== EMBEDDING_BINARY_MAGIC[2] ||
+    bytes[3] !== EMBEDDING_BINARY_MAGIC[3]
+  ) {
+    throw new Error("Invalid binary embeddings magic");
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder();
+  let offset = 4;
+
+  const version = view.getUint8(offset);
+  offset += 1;
+  if (version !== EMBEDDING_BINARY_VERSION) {
+    throw new Error(`Unsupported binary embeddings version: ${version}`);
+  }
+  const quantType = view.getUint8(offset);
+  offset += 1;
+  if (quantType !== EMBEDDING_QUANT_INT8) {
+    throw new Error(`Unsupported quantization type: ${quantType}`);
+  }
+  const analysisVersion = view.getUint16(offset, false);
+  offset += 2;
+  const dim = view.getUint16(offset, false);
+  offset += 2;
+  const modelLen = view.getUint16(offset, false);
+  offset += 2;
+  if (offset + modelLen + 3 > bytes.byteLength) {
+    throw new Error("Truncated binary embeddings header");
+  }
+  const model = decoder.decode(bytes.subarray(offset, offset + modelLen));
+  offset += modelLen;
+  const flags = view.getUint8(offset);
+  offset += 1;
+  const hasMore = (flags & 1) !== 0;
+  const cursorLen = view.getUint16(offset, false);
+  offset += 2;
+  if (offset + cursorLen + 12 > bytes.byteLength) {
+    throw new Error("Truncated binary embeddings cursor");
+  }
+  const nextCursor = decoder.decode(bytes.subarray(offset, offset + cursorLen));
+  offset += cursorLen;
+  const maxUpdatedAtMs = Number(view.getBigInt64(offset, false));
+  offset += 8;
+  const recordCount = view.getUint32(offset, false);
+  offset += 4;
+
+  const records: DecodedBinaryEmbeddingRecord[] = [];
+  for (let i = 0; i < recordCount; i++) {
+    if (offset + 2 > bytes.byteLength) {
+      throw new Error("Truncated binary embedding record id length");
+    }
+    const idLen = view.getUint16(offset, false);
+    offset += 2;
+    if (offset + idLen + 12 + dim > bytes.byteLength) {
+      throw new Error("Truncated binary embedding record");
+    }
+    const audioId = decoder.decode(bytes.subarray(offset, offset + idLen));
+    offset += idLen;
+    const updatedAtMs = Number(view.getBigInt64(offset, false));
+    offset += 8;
+    const scale = view.getFloat32(offset, false);
+    offset += 4;
+    const data = new Int8Array(dim);
+    data.set(new Int8Array(bytes.buffer, bytes.byteOffset + offset, dim));
+    offset += dim;
+    records.push({ audioId, updatedAtMs, scale, data });
+  }
+
+  return {
+    model,
+    analysisVersion,
+    dim,
+    hasMore,
+    nextCursor,
+    maxUpdatedAtMs,
+    records,
+  };
+}
